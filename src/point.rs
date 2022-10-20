@@ -76,6 +76,12 @@ where
     }
 }
 
+impl Point<usize> {
+    pub fn to_index(&self, w: usize) -> usize {
+        return self.y * w + self.x;
+    }
+}
+
 pub const UP: UnitDir = UnitDir { x: 0, y: -1 };
 pub const DOWN: UnitDir = UnitDir { x: 0, y: 1 };
 pub const LEFT: UnitDir = UnitDir { x: -1, y: 0 };

@@ -1,27 +1,26 @@
 mod simple_patterns;
 // mod render;
 mod point;
+mod image_utils;
 mod wfc;
+use wfc::{Model};
 extern crate futures;
 extern crate macroquad;
 use macroquad::prelude::*;
 use macroquad::texture::{self, Image, Texture2D};
+use macroquad::ui::root_ui;
 use simple_patterns::get_simple_patterns;
 
 #[macroquad::main("BasicShapes")]
 async fn main() {
-    let n: u16 = 4;
+    const N: u16 = 4;
     let sps = get_simple_patterns();
+    const PROBS: [f32; 5] = [0.2,0.2,0.2,0.2,0.2];
     let pictures: Vec<Image> = sps.iter().map(|simpl| simpl.img.clone()).collect();
-    let default_image = Image::gen_image_color(n, n, BLACK);
+    let default_image = Image::gen_image_color(N, N, BLACK);
     let out_dims = point::Dimens { x: 10, y: 10 };
-    let model = wfc::Model::new(10, out_dims);
+    let mut model: Model = Model::new(N, 5, out_dims, PROBS.to_vec(), pictures);
     println!("{:?}", model);
-    let img = model_to_image(model, &pictures, &default_image);
-    let model_textures: Vec<(point::Loc, Texture2D)> = img
-        .iter()
-        .map(|(loc, pic)| (*loc, Texture2D::from_image(pic)))
-        .collect();
     let mut zoom: f32 = 0.01;
     let mut target: (f32,f32) = (0.,0.);
     let mut prev_mouse_pos: (f32,f32) = (0.,0.);
@@ -61,7 +60,16 @@ async fn main() {
             _ => (),
         }
         // TODO: render if cli arg says to render (or inverse)
-        clear_background(WHITE);
+        if let wfc::ModelStateEnum::Done = &model.state {
+            clear_background(GREEN);
+        }
+        else if let wfc::ModelStateEnum::Bad = &model.state {
+            clear_background(RED);
+        }
+        else {
+            clear_background(WHITE);
+        }
+        
         set_camera(&Camera2D {
             zoom: vec2(zoom, zoom * screen_width() / screen_height()),
             // zoom: vec2(0.01,0.01),
@@ -71,7 +79,12 @@ async fn main() {
             ..Default::default()
         });
 
-        let nusize: usize = n.into();
+        let imgs = model.to_images();
+        let model_textures: Vec<(point::Loc, Texture2D)> = imgs
+            .iter()
+            .map(|(&loc, pic)| (loc, Texture2D::from_image(&pic)))
+            .collect();
+        let nusize: usize = N.into();
         for (loc, img) in &model_textures {
             img.set_filter(texture::FilterMode::Nearest);
             draw_texture(
@@ -81,75 +94,14 @@ async fn main() {
                 WHITE,
             );
         }
+        if root_ui().button(None, "Step") {
+            model.step()
+        }
+        // if root_ui().button(None, "Collapse") {
+        //     model.collapse();
+        //     // model.tile_at_mut(Loc {x:0,y:0}).dom = 
+        // }
         prev_mouse_pos = mouse_position();
         next_frame().await
     }
-}
-
-//credit: https://stackoverflow.com/a/29321264
-fn blend_rgb_val(a: f32, b: f32, t: f32) -> f32 {
-    let asqr = a.powi(2);
-    let bsqr = b.powi(2);
-    let invt = 1.0 - t;
-    return ((invt * asqr) + (t * bsqr)).sqrt();
-}
-
-//credit: https://stackoverflow.com/a/29321264
-fn blend_alpha_value(a: f32, b: f32, t: f32) -> f32 {
-    return (1.0 - t) * a + t * b;
-}
-
-//credit: https://stackoverflow.com/a/29321264
-fn blend_rgba(c1: Color, c2: Color) -> Color {
-    let t: f32 = 0.5; //blend factor
-    return Color {
-        r: blend_rgb_val(c1.r, c2.r, t),
-        g: blend_rgb_val(c1.g, c2.g, t),
-        b: blend_rgb_val(c1.b, c2.b, t),
-        a: blend_alpha_value(c1.a, c2.a, t),
-    };
-}
-
-fn image_colors(img: &Image) -> Vec<Color> {
-    return img
-        .get_image_data()
-        .iter()
-        .map(|[r, g, b, a]| Color::from_rgba(*r, *g, *b, *a))
-        .collect();
-}
-
-trait Merge {
-    fn merge(a: &Self, b: &Self) -> Self;
-}
-
-impl Merge for Image {
-    fn merge(a: &Self, b: &Self) -> Self {
-        let mut newimg = a.clone();
-        let newclrs: Vec<Color> = image_colors(a)
-            .into_iter()
-            .zip(image_colors(b).into_iter())
-            .map(|(ac, bc)| blend_rgba(ac, bc))
-            .collect();
-        newimg.update(&newclrs);
-        return newimg;
-    }
-}
-
-fn image_from_tile_dom(dom: &wfc::IdVec, pictures: &[Image], def: &Image) -> Image {
-    return dom
-        .iter()
-        .zip(pictures.iter())
-        .filter(|(in_domain, _)| **in_domain)
-        .map(|(_, pic)| pic)
-        .fold(def.clone(), |p1, p2| {
-            return Image::merge(&p1, p2);
-        });
-}
-
-fn model_to_image(model: wfc::Model, pictures: &[Image], def: &Image) -> Vec<(point::Loc, Image)> {
-    return model
-        .board
-        .iter()
-        .map(|tile| (tile.loc, image_from_tile_dom(&tile.dom, pictures, def)))
-        .collect();
 }
