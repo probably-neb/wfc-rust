@@ -1,28 +1,12 @@
 use crate::image_utils::Merge;
 use crate::point;
 use crate::Image;
-use point::{Dimens, Dir, Loc, Point};
-use std::rc::{Rc, Weak};
+use point::{Dimens, Dir, Loc};
+use std::ops::Index;
+use std::ops::IndexMut;
+use std::rc::Rc;
 
-pub type IdVec = Vec<bool>;
-
-#[derive(Debug, Clone)]
-pub struct Tile {
-    pub loc: Loc,
-    pub dom: Vec<bool>,
-    pub probs: Rc<Vec<Probability>>,
-    pub patterns: Rc<Vec<Image>>,
-    pub img: Image,
-}
-
-#[derive(Debug)]
-pub struct Model /*<S: ModelState>*/ {
-    // pub state: S,
-    pub state: ModelStateEnum,
-    pub out_dims: Dimens,
-    pub board: Vec<Tile>,
-    pub probs: Rc<Vec<f32>>, // adj_mat: AdjacencyMatrix
-}
+pub type Domain = Vec<bool>;
 
 trait Entropy {
     fn entropy(&self) -> f32;
@@ -59,33 +43,28 @@ impl Entropy for Tile {
         }
     }
 }
-// fn fst<A, B>(tup: (A, B)) -> A {
-//     return tup.0;
-// }
 
-// fn snd<A, B>(tup: (&A, &B)) -> B {
-//     return *tup.1;
-// }
+#[derive(Debug)]
+pub enum TileStateEnum {
+    Collapsed,
+    UnCollapsed,
+}
+use TileStateEnum::*;
 
-// fn mapfst<A, B, C>(tup: (A, B), f: fn(A) -> C) -> (C, B) {
-//     return (f(tup.0), tup.1);
-// }
-// fn mapsnd<A, B, C>(tup: (A, B), f: fn(B) -> C) -> (A, C) {
-//     return (tup.0, f(tup.1));
-// }
-//
-// fn merge_images(dest: &mut Image, images: &Vec<Image>) {
-//     let merged = images.iter().reduce(|a, b| &Image::merge(a, &b));
-//     merged.map(|img| {
-//         dest.width = img.width;
-//         dest.height = img.height;
-//         dest.bytes = img.bytes.clone();
-//     });
-// }
+#[derive(Debug)]
+pub struct Tile {
+    //TODO: could replace Tile with Collapsed enum wrapping tile
+    pub loc: Loc,
+    pub dom: Domain,
+    pub probs: Rc<Vec<Probability>>,
+    pub patterns: Rc<Vec<Image>>,
+    pub img: Image,
+    pub state: TileStateEnum,
+}
 
 impl Tile {
     fn new(loc: Loc, dlen: usize, probs: Rc<Vec<Probability>>, patterns: Rc<Vec<Image>>) -> Self {
-        let dom: IdVec = (0..dlen).map(|_| true).collect();
+        let dom: Domain = (0..dlen).map(|_| true).collect();
         let img = Image::empty();
         let mut tile = Tile {
             loc,
@@ -93,65 +72,111 @@ impl Tile {
             probs,
             patterns,
             img,
+            state: UnCollapsed,
         };
         tile.update_image();
         return tile;
     }
 
     fn update_image(&mut self) {
-        // PERF: don't clone all images
-        let mut possible_pics = self
+        let mut images = self
             .dom
             .iter()
             .zip(self.patterns.iter())
             .filter(|(&in_domain, _)| in_domain)
             .map(|(_, pic)| pic);
-        if self.entropy() == 0.0 {
-            match possible_pics.next() {
-                Some(img) => self.img = img.clone(),
-                None => return
+        match self.state {
+            Collapsed => images.next().map(|img| {
+                self.img.bytes = img.bytes.clone();
+            }),
+            UnCollapsed => {
+                images.fold(&mut self.img, |p1, p2| {
+                    Image::merge_mut(p1, p2);
+                    return p1;
+                });
+                return;
             }
-        } else {
-            possible_pics.fold(&mut self.img, |p1, p2| {
-                Image::merge_mut(p1, p2);
-                return p1;
-            });
-        }
+        };
     }
 
     fn collapse(&mut self, heuristic: fn(&Tile) -> Option<usize>) {
-        let mayb_idx = heuristic(self);
-        self.dom.fill(false);
-        Option::map(mayb_idx, |idx| {
-            self.dom[idx] = true;
-        });
-        self.update_image();
+        match self.state {
+            UnCollapsed => {
+                let mayb_idx = heuristic(self);
+                self.dom.fill(false);
+                Option::map(mayb_idx, |idx| {
+                    self.dom[idx] = true;
+                });
+                self.state = Collapsed;
+                self.update_image();
+            }
+            Collapsed => panic!("Tried to Collapse collapsed Tile"),
+        }
     }
 }
 
 type AdjacencyMatrix = Vec<[Vec<bool>; 4]>;
 
-trait Board {
-    fn new(
-        num_patterns: usize,
-        dimensions: &Dimens,
-        probs: &Rc<Vec<Probability>>,
-        patterns: &Rc<Vec<Image>>,
-    ) -> Self;
+#[derive(Debug)]
+pub struct Board {
+    pub w: usize,
+    pub h: usize,
+    pub tiles: Vec<Tile>,
 }
 
-impl Board for Vec<Tile> {
+impl Board {
     fn new(
         num_patterns: usize,
         dimensions: &Dimens,
         probs: &Rc<Vec<Probability>>,
         patterns: &Rc<Vec<Image>>,
     ) -> Self {
-        return dimensions
+        let tiles = dimensions
             .to_coord_list()
             .into_iter()
             .map(|loc| Tile::new(loc, num_patterns, probs.clone(), patterns.clone()))
             .collect();
+        return Board {
+            w: dimensions.x,
+            h: dimensions.y,
+            tiles,
+        };
+    }
+
+    fn iter(&self) -> std::slice::Iter<Tile> {
+        return self.tiles.iter();
+    }
+
+    pub fn min_entropy_loc(&self) -> Option<Loc> {
+        // TODO: get list of min entropy tiles and choose random for less predictable output
+        // PERF: don't call entropy on tile so many times
+        return self
+            .iter()
+            .filter(|tile| tile.entropy() != 0.0)
+            .min_by(|t1, t2| t1.entropy().total_cmp(&t2.entropy()))
+            .map(|tile| tile.loc);
+    }
+}
+
+impl Index<usize> for Board {
+    type Output = Tile;
+    fn index(&self, index: usize) -> &Self::Output {
+        return &self.tiles[index];
+    }
+}
+
+impl Index<Loc> for Board {
+    type Output = Tile;
+    fn index(&self, loc: Loc) -> &Self::Output {
+        let index = loc.to_index(self.w);
+        return &self[index];
+    }
+}
+
+impl IndexMut<Loc> for Board {
+    fn index_mut(&mut self, loc: Loc) -> &mut Self::Output {
+        let index = loc.to_index(self.w);
+        return &mut self.tiles[index];
     }
 }
 
@@ -179,16 +204,23 @@ impl Board for Vec<Tile> {
 #[derive(Debug)]
 pub enum ModelStateEnum {
     Collapsing,
-    Propogating { stack: Vec<usize> },
+    Propogating { stack: Vec<Loc> },
     Done,
     Bad,
 }
+use ModelStateEnum::*;
 
-// impl ModelState for ModelStateEnum {}
+#[derive(Debug)]
+pub struct Model /*<S: ModelState>*/ {
+    // pub state: S,
+    pub state: ModelStateEnum,
+    pub out_dims: Dimens,
+    pub board: Board,
+    pub probs: Rc<Vec<f32>>, // adj_mat: AdjacencyMatrix
+}
 
 impl Model {
     pub fn new(
-        n: u16,
         num_patterns: usize,
         out_dims: Dimens,
         prob_vec: Vec<f32>,
@@ -197,32 +229,13 @@ impl Model {
         let probs = Rc::new(prob_vec);
         let patterns = Rc::new(pattern_vec);
         let board = Board::new(num_patterns, &out_dims, &probs, &patterns);
-        let state = ModelStateEnum::Collapsing;
+        let state = Collapsing;
         return Model {
             out_dims,
             board,
             state,
             probs, // the strong owner of probs
         };
-    }
-
-    pub fn tile_at_mut(&mut self, loc: Loc) -> &mut Tile {
-        let idx = self.out_dims.x * loc.y + loc.x;
-        return &mut self.board[idx];
-    }
-
-    pub fn iter_tiles(&self) -> std::slice::Iter<Tile> {
-        return self.board.iter();
-    }
-
-    pub fn min_nz_entropy(&self) -> Option<Loc> {
-        // TODO: get list of min entropy tiles and choose random for less predictable output
-        // PERF: don't call entropy on tile so many times
-        return self
-            .iter_tiles()
-            .filter(|tile| tile.entropy() != 0.0)
-            .min_by(|t1, t2| t1.entropy().total_cmp(&t2.entropy()))
-            .map(|tile| tile.loc);
     }
 
     pub fn to_images(&self) -> Vec<(&Loc, &Image)> {
@@ -235,27 +248,26 @@ impl Model {
 
     pub fn step(&mut self) {
         match &self.state {
-            ModelStateEnum::Bad | ModelStateEnum::Done => (),
-            ModelStateEnum::Collapsing => self.collapse(),
-            ModelStateEnum::Propogating { .. } => self.propogate(),
+            Bad | Done => (),
+            Collapsing => self.collapse(),
+            Propogating { .. } => self.propogate(),
         }
     }
 
     pub fn propogate(&mut self) {
-        self.state = ModelStateEnum::Collapsing;
+        self.state = Collapsing;
     }
 
     pub fn collapse(&mut self) {
-        let min_ent_tile_loc = self.min_nz_entropy();
-        let mayb_idx = Option::map(min_ent_tile_loc, |loc| loc.to_index(self.out_dims.x));
-        match mayb_idx {
-            Some(idx) => {
-                let stack = vec![idx];
-                self.state = ModelStateEnum::Propogating { stack };
-                self.board[idx].collapse(first_allowed_heuristic);
+        let min_ent_tile_loc = self.board.min_entropy_loc();
+        match min_ent_tile_loc {
+            Some(loc) => {
+                let stack = vec![loc];
+                self.state = Propogating { stack };
+                self.board[loc].collapse(first_allowed_heuristic);
             }
             None => {
-                self.state = ModelStateEnum::Done;
+                self.state = Done;
             }
         }
     }

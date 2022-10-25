@@ -17,9 +17,8 @@ async fn main() {
     let sps = get_simple_patterns();
     const PROBS: [f32; 5] = [0.2,0.2,0.2,0.2,0.2];
     let pictures: Vec<Image> = sps.iter().map(|simpl| simpl.img.clone()).collect();
-    let default_image = Image::gen_image_color(N, N, BLACK);
     let out_dims = point::Dimens { x: 10, y: 10 };
-    let mut model: Model = Model::new(N, 5, out_dims, PROBS.to_vec(), pictures);
+    let mut model: Model = Model::new(5, out_dims, PROBS.to_vec(), pictures);
     println!("{:?}", model);
     let mut zoom: f32 = 0.01;
     let mut target: (f32,f32) = (0.,0.);

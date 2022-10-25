@@ -10,6 +10,7 @@ pub fn blend_rgb_val(a: f32, b: f32, t: f32) -> f32 {
 }
 
 //credit: https://stackoverflow.com/a/29321264
+#[inline]
 pub fn blend_alpha_value(a: f32, b: f32, t: f32) -> f32 {
     return (1.0 - t) * a + t * b;
 }
@@ -25,6 +26,7 @@ pub fn blend_rgba(c1: Color, c2: Color) -> Color {
     };
 }
 
+#[inline]
 pub fn image_colors(img: &Image) -> Vec<Color> {
     return img
         .get_image_data()
@@ -33,7 +35,8 @@ pub fn image_colors(img: &Image) -> Vec<Color> {
         .collect();
 }
 
-pub fn is_image_empty(i: &Image) -> bool {
+#[inline]
+pub fn is_empty_image(i: &Image) -> bool {
     return i.width == 0 && i.height == 0;
 }
 
@@ -42,8 +45,15 @@ pub trait Merge {
     fn merge_mut(a: &mut Self, b: &Self);
 }
 
-fn apply_tup<A,B,C>(tup: (A,B), f: fn(A,B) -> C) -> C {
-    f(tup.0,tup.1)
+fn apply_tup<A, B, C>(tup: (A, B), f: fn(A, B) -> C) -> C {
+    f(tup.0, tup.1)
+}
+
+#[inline]
+fn set_img(a: &mut Image, b: &Image) {
+    a.width = b.width;
+    a.height = b.height;
+    a.bytes = b.bytes.clone();
 }
 
 impl Merge for Image {
@@ -59,17 +69,19 @@ impl Merge for Image {
     }
 
     fn merge_mut(a: &mut Self, b: &Self) {
-        if a.width() == 0 && a.height() == 0 {
-            a.width = b.width;
-            a.height = b.height;
-            a.bytes = b.bytes.clone();
+        if is_empty_image(a) {
+            set_img(a, b);
+        } else if is_empty_image(b) {
+            return;
         }
+
         let merged_colors: Vec<u8> = std::iter::zip(image_colors(a), image_colors(b))
             .flat_map(|(ac, bc)| {
                 let clr = blend_rgba(ac, bc);
                 let bytes: [u8; 4] = clr.into();
                 return bytes;
-            }).collect();
+            })
+            .collect();
         a.width = std::cmp::min(a.width, b.width);
         a.height = std::cmp::min(a.height, b.height);
         a.bytes = merged_colors;
