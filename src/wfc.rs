@@ -1,54 +1,21 @@
-use crate::image_utils::Merge;
-use crate::point;
-use crate::Image;
-use point::{Dimens, Dir, Loc};
-use std::ops::Index;
-use std::ops::IndexMut;
+use crate::{adjacency_map, domain, entropy, image_utils, point};
+use adjacency_map::AdjacencyMap;
+use domain::Domain;
+use entropy::{Entropy, Probability};
+use image_utils::Merge;
+use point::{CardinalDir, CardinalDir::*, Dimens, Loc, CARDINAL_DIRS};
+
+use core::panic;
+use macroquad::texture::Image;
+use std::ops::{Index, IndexMut};
 use std::rc::Rc;
 
-pub type Domain = Vec<bool>;
-
-trait Entropy {
-    fn entropy(&self) -> f32;
-}
-
-type Probability = f32;
-
-impl Entropy for Probability {
-    fn entropy(&self) -> Probability {
-        let prob = self;
-        return prob * (1.0 / prob).log(2.0);
-    }
-}
-
-impl Entropy for Vec<Probability> {
-    fn entropy(&self) -> f32 {
-        return self.iter().map(|&prob| prob.entropy()).sum();
-    }
-}
-
-impl Entropy for Tile {
-    fn entropy(&self) -> f32 {
-        let probs: Vec<Probability> = self
-            .dom
-            .iter()
-            .zip(self.probs.iter())
-            .filter(|(indom, _)| **indom)
-            .map(|(_, prob)| *prob)
-            .collect();
-        if probs.len() <= 1 {
-            return 0.0;
-        } else {
-            return probs.entropy();
-        }
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum TileStateEnum {
     Collapsed,
     UnCollapsed,
 }
+
 use TileStateEnum::*;
 
 #[derive(Debug)]
@@ -64,7 +31,7 @@ pub struct Tile {
 
 impl Tile {
     fn new(loc: Loc, dlen: usize, probs: Rc<Vec<Probability>>, patterns: Rc<Vec<Image>>) -> Self {
-        let dom: Domain = (0..dlen).map(|_| true).collect();
+        let dom: Domain = Domain((0..dlen).map(|_| true).collect());
         let img = Image::empty();
         let mut tile = Tile {
             loc,
@@ -103,9 +70,8 @@ impl Tile {
         match self.state {
             UnCollapsed => {
                 let mayb_idx = heuristic(self);
-                self.dom.fill(false);
                 Option::map(mayb_idx, |idx| {
-                    self.dom[idx] = true;
+                    self.dom.only(idx);
                 });
                 self.state = Collapsed;
                 self.update_image();
@@ -113,9 +79,13 @@ impl Tile {
             Collapsed => panic!("Tried to Collapse collapsed Tile"),
         }
     }
-}
 
-type AdjacencyMatrix = Vec<[Vec<bool>; 4]>;
+    fn update_domain(&mut self, dom: Domain) -> bool {
+        let changed = &dom == &self.dom;
+        self.dom &= dom;
+        return changed;
+    }
+}
 
 #[derive(Debug)]
 pub struct Board {
@@ -132,7 +102,7 @@ impl Board {
         patterns: &Rc<Vec<Image>>,
     ) -> Self {
         let tiles = dimensions
-            .to_coord_list()
+            .coord_list()
             .into_iter()
             .map(|loc| Tile::new(loc, num_patterns, probs.clone(), patterns.clone()))
             .collect();
@@ -152,9 +122,29 @@ impl Board {
         // PERF: don't call entropy on tile so many times
         return self
             .iter()
+            .filter(|tile| match tile.state {
+                Collapsed => false,
+                UnCollapsed => true,
+            })
             .filter(|tile| tile.entropy() != 0.0)
             .min_by(|t1, t2| t1.entropy().total_cmp(&t2.entropy()))
             .map(|tile| tile.loc);
+    }
+
+    fn bounds(&self) -> Dimens {
+        // NOTE: do I ever need it to not be as Dimens? maybe don't have w, h
+        return Dimens{x:self.w, y: self.h};
+    }
+
+    pub fn get_adjacent_tile_locs(&self, loc: Loc) -> Vec<(CardinalDir, Loc)> {
+        //TODO: find way to iter over enum itself
+        return CARDINAL_DIRS
+            .iter()
+            .filter_map(|cdir| {
+                loc.add_udir_bounds(cdir.dir(), self.bounds())
+                    .map(|nloc| (*cdir, nloc))
+            })
+            .collect();
     }
 }
 
@@ -168,38 +158,17 @@ impl Index<usize> for Board {
 impl Index<Loc> for Board {
     type Output = Tile;
     fn index(&self, loc: Loc) -> &Self::Output {
-        let index = loc.to_index(self.w);
+        let index = loc.as_index(self.w);
         return &self[index];
     }
 }
 
 impl IndexMut<Loc> for Board {
     fn index_mut(&mut self, loc: Loc) -> &mut Self::Output {
-        let index = loc.to_index(self.w);
+        let index = loc.as_index(self.w);
         return &mut self.tiles[index];
     }
 }
-
-// ModelStates
-// Not an enum for <S> in Model definition
-// allowing type implementations such as from(Model<Propogating>)
-// pub trait ModelState {}
-// the state after propogating but before collapsing a tile
-// also the InitialState
-// #[derive(Debug)]
-// pub struct Collapsing {}
-// impl ModelState for Collapsing {}
-// pub type InitialState = Collapsing;
-// propogating implications of collapsing a tile (tiles domains are being updated)
-// #[derive(Debug)]
-// pub struct Propogating {
-//     stack: Vec<usize>,
-// }
-// impl ModelState for Propogating {}
-// not going to waste space here explaining what state this represents /s
-// #[derive(Debug)]
-// pub struct Done {}
-// impl ModelState for Done {}
 
 #[derive(Debug)]
 pub enum ModelStateEnum {
@@ -217,6 +186,7 @@ pub struct Model /*<S: ModelState>*/ {
     pub out_dims: Dimens,
     pub board: Board,
     pub probs: Rc<Vec<f32>>, // adj_mat: AdjacencyMatrix
+    pub adj_map: AdjacencyMap<Vec<Domain>>,
 }
 
 impl Model {
@@ -225,6 +195,7 @@ impl Model {
         out_dims: Dimens,
         prob_vec: Vec<f32>,
         pattern_vec: Vec<Image>,
+        adj_map: AdjacencyMap<Vec<Domain>>,
     ) -> Model {
         let probs = Rc::new(prob_vec);
         let patterns = Rc::new(pattern_vec);
@@ -235,6 +206,7 @@ impl Model {
             board,
             state,
             probs, // the strong owner of probs
+            adj_map,
         };
     }
 
@@ -249,19 +221,55 @@ impl Model {
     pub fn step(&mut self) {
         match &self.state {
             Bad | Done => (),
-            Collapsing => self.collapse(),
+            Collapsing => self.collapse_min_entropy_tile(),
             Propogating { .. } => self.propogate(),
         }
     }
 
     pub fn propogate(&mut self) {
-        self.state = Collapsing;
+        match &mut self.state {
+            Propogating { stack } => match &mut stack.pop() {
+                Some(loc) => {
+                    let adjacents = self.board.get_adjacent_tile_locs(*loc);
+                    println!("Loc: {:?} | Adjacents: {:?}", loc, adjacents);
+                    // TODO: create method to return domain in all directions as adjacency_map and
+                    // iterate over that instead
+                    for (dir, adj_loc) in adjacents {
+                        // the domain of stack_tile towards adjacent_tile
+                        let stack_tile_dom = &self.board[*loc].dom;
+                        println!("STACK TILE DOM: {:?}", stack_tile_dom);
+                        let dom_towards_adjacent_tile =
+                            self.adj_map.domain_in_dir(dir, stack_tile_dom);
+                        // println!("Dom in dir: {:?} = {:?}", dir,dom_towards_adjacent_tile);
+
+                        let dom_changed = {
+                            println!("getting dom of tile at {:?}", adj_loc);
+                            let adjacent_tile_dom = &self.board[adj_loc].dom;
+                            &dom_towards_adjacent_tile != adjacent_tile_dom
+                        };
+
+                        if dom_changed {
+                            // update adjacent_tiles domain and push it too the stack
+                            let adjacent_tile = &mut self.board[adj_loc];
+                            // println!("Updating tile at {:?}", adj_loc);
+                            adjacent_tile.update_domain(dom_towards_adjacent_tile);
+                            // println!("new domain: {:?}", adjacent_tile.dom);
+                            adjacent_tile.update_image();
+                            // stack.push(adj_loc);
+                        }
+                    }
+                }
+                None => self.state = Collapsing,
+            },
+            _ => panic!("Tried to propogate non propogating model"),
+        }
     }
 
-    pub fn collapse(&mut self) {
+    pub fn collapse_min_entropy_tile(&mut self) {
         let min_ent_tile_loc = self.board.min_entropy_loc();
         match min_ent_tile_loc {
             Some(loc) => {
+                println!("min ent tile state: {:?}", self.board[loc].state);
                 let stack = vec![loc];
                 self.state = Propogating { stack };
                 self.board[loc].collapse(first_allowed_heuristic);
@@ -273,11 +281,6 @@ impl Model {
     }
 }
 
-// enum MaybeModel<S: ModelState> {
-//     Yes(Model<S>),
-//     No(Model<Done>),
-// }
-
 fn first_allowed_heuristic(tile: &Tile) -> Option<usize> {
     let idx;
     for (i, &allowed) in (tile.dom).iter().enumerate() {
@@ -288,33 +291,3 @@ fn first_allowed_heuristic(tile: &Tile) -> Option<usize> {
     }
     return None;
 }
-
-// collapse min entropy tile
-// impl From<Model<Collapsing>> for MaybeModel<Propogating> {
-//     fn from(model: Model<Collapsing>) -> MaybeModel<Propogating> {
-//         let min_ent_tile_loc = model.min_nz_entropy();
-//         let mayb_idx = Option::map(min_ent_tile_loc, |loc| loc.to_index(model.out_dims.x));
-//         match mayb_idx {
-//             Some(idx) => {
-//                 let stack = vec![idx];
-//                 let mut new_model = Model {
-//                     state: Propogating { stack },
-//                     board: model.board,
-//                     probs: model.probs,
-//                     out_dims: model.out_dims,
-//                 };
-//                 new_model.board[idx].collapse(first_allowed_heuristic);
-//                 return MaybeModel::Yes(new_model);
-//             }
-//             None => {
-//                 let new_model = Model {
-//                     state: Done {},
-//                     board: model.board,
-//                     probs: model.probs,
-//                     out_dims: model.out_dims,
-//                 };
-//                 return MaybeModel::No(new_model);
-//             }
-//         }
-//     }
-// }
