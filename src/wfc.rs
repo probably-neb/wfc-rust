@@ -3,6 +3,7 @@ use adjacency_map::AdjacencyMap;
 use domain::Domain;
 use entropy::{Entropy, Probability};
 use image_utils::Merge;
+use macroquad::prelude::RED;
 use point::{CardinalDir, CardinalDir::*, Dimens, Loc, CARDINAL_DIRS};
 
 use core::panic;
@@ -81,8 +82,12 @@ impl Tile {
     }
 
     fn update_domain(&mut self, dom: Domain) -> bool {
-        let changed = &dom == &self.dom;
-        self.dom &= dom;
+        let new_dom = &dom & &self.dom;
+        let changed = new_dom != self.dom;
+        self.dom = new_dom;
+        if ! self.dom.0.contains(&true) {
+            self.img = Image::gen_image_color(self.img.width, self.img.height, RED);
+        }
         return changed;
     }
 }
@@ -170,12 +175,12 @@ impl IndexMut<Loc> for Board {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ModelStateEnum {
     Collapsing,
     Propogating { stack: Vec<Loc> },
     Done,
-    Bad,
+    Bad(Box<ModelStateEnum>),
 }
 use ModelStateEnum::*;
 
@@ -218,9 +223,14 @@ impl Model {
             .collect();
     }
 
+    fn uh_oh_stinky(&mut self) {
+        let boxed_state = Box::new(self.state.clone());
+        self.state = Bad(boxed_state);
+    }
+
     pub fn step(&mut self) {
         match &self.state {
-            Bad | Done => (),
+            Bad(..) | Done => (),
             Collapsing => self.collapse_min_entropy_tile(),
             Propogating { .. } => self.propogate(),
         }
@@ -235,27 +245,26 @@ impl Model {
                     // TODO: create method to return domain in all directions as adjacency_map and
                     // iterate over that instead
                     for (dir, adj_loc) in adjacents {
-                        // the domain of stack_tile towards adjacent_tile
                         let stack_tile_dom = &self.board[*loc].dom;
+                        // the domain of stack_tile towards adjacent_tile
                         println!("STACK TILE DOM: {:?}", stack_tile_dom);
                         let dom_towards_adjacent_tile =
-                            self.adj_map.domain_in_dir(dir, stack_tile_dom);
-                        // println!("Dom in dir: {:?} = {:?}", dir,dom_towards_adjacent_tile);
+                            match self.adj_map.domain_in_dir(dir, stack_tile_dom) {
+                                Some(dom) => dom,
+                                None => {
+                                    self.uh_oh_stinky();
+                                    return;
+                                }
+                            };
 
-                        let dom_changed = {
-                            println!("getting dom of tile at {:?}", adj_loc);
-                            let adjacent_tile_dom = &self.board[adj_loc].dom;
-                            &dom_towards_adjacent_tile != adjacent_tile_dom
-                        };
+                        let adjacent_tile = &mut self.board[adj_loc];
 
-                        if dom_changed {
-                            // update adjacent_tiles domain and push it too the stack
-                            let adjacent_tile = &mut self.board[adj_loc];
-                            // println!("Updating tile at {:?}", adj_loc);
-                            adjacent_tile.update_domain(dom_towards_adjacent_tile);
-                            // println!("new domain: {:?}", adjacent_tile.dom);
+                        let domain_changed = adjacent_tile.update_domain(dom_towards_adjacent_tile);
+
+                        if  domain_changed {
+                            // update adjacent_tiles image and push it too the stack
                             adjacent_tile.update_image();
-                            // stack.push(adj_loc);
+                            stack.push(adj_loc);
                         }
                     }
                 }

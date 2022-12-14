@@ -1,5 +1,6 @@
 use num_traits::{sign::Unsigned, PrimInt};
 use std::{
+    fmt::{Debug, Display},
     iter::repeat,
     ops::{Add, Neg, Sub},
     slice::Iter,
@@ -11,10 +12,30 @@ trait XY {
     fn y(&self) -> Self::Output;
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct Point<T: PrimInt> {
     pub x: T,
     pub y: T,
+}
+
+impl<T> Debug for Point<T>
+where
+    T: PrimInt + std::fmt::Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = format!("<{},{}>", self.x, self.y);
+        f.write_str(&str)
+    }
+}
+
+impl<T> Display for Point<T>
+where
+    T: PrimInt + std::fmt::Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = format!("<{},{}>", self.x, self.y);
+        f.write_str(&str)
+    }
 }
 
 pub type Loc = Point<usize>;

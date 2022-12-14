@@ -25,7 +25,7 @@ async fn main() {
     let sps = get_simple_patterns();
     const PROBS: [f32; 5] = [0.2, 0.2, 0.2, 0.2, 0.2];
     let pictures: Vec<Image> = sps.iter().map(|simpl| simpl.img.clone()).collect();
-    let out_dims = point::Dimens { x: 10, y: 10 };
+    let out_dims = point::Dimens { x: 4, y: 4 };
     let adj_map = AdjacencyMap::from_individual_adj_maps(
         sps.iter()
             .map(|p| {
@@ -43,6 +43,7 @@ async fn main() {
     let mut prev_mouse_pos: (f32, f32) = (0., 0.);
 
     let mut play = false;
+    let mut err = false;
 
     loop {
         if is_mouse_button_down(MouseButton::Right) {
@@ -80,7 +81,7 @@ async fn main() {
         // TODO: render if cli arg says to render (or inverse)
         if let wfc::ModelStateEnum::Done = &model.state {
             clear_background(GREEN);
-        } else if let wfc::ModelStateEnum::Bad = &model.state {
+        } else if let wfc::ModelStateEnum::Bad(..) = &model.state {
             clear_background(RED);
         } else {
             clear_background(WHITE);
@@ -113,18 +114,19 @@ async fn main() {
         if is_mouse_button_down(MouseButton::Left) {
             let mouse_pos = mouse_position();
             let adjusted_pos = (mouse_pos.0 / (nusize as f32), mouse_pos.1 / (nusize as f32));
-            if adjusted_pos.0 > 0.0 && adjusted_pos.1 > 0.0 {
-                if adjusted_pos.0 < (model.out_dims.x as f32)
-                    && adjusted_pos.1 < (model.out_dims.y as f32)
-                {
-                    let x = adjusted_pos.0.round() as usize;
-                    let y = adjusted_pos.1.round() as usize;
-                    if x < model.out_dims.x && y < model.out_dims.y {
-                        let pnt = Loc { x, y };
-                        let tile = &model.board[pnt];
-                        let str = format!("{tile:?}");
-                        root_ui().label(None, &str);
-                    }
+            if adjusted_pos.0 > 0.0
+                && adjusted_pos.1 > 0.0
+                && adjusted_pos.0 < (model.out_dims.x as f32)
+                && adjusted_pos.1 < (model.out_dims.y as f32)
+            {
+                let x = adjusted_pos.0.round() as usize;
+                let y = adjusted_pos.1.round() as usize;
+                if x < model.out_dims.x && y < model.out_dims.y {
+                    let pnt = Loc { x, y };
+                    let tile = &model.board[pnt];
+                    let str = format!("{tile:?}");
+                    println!("{}",str);
+                    // root_ui().label(None, &str);
                 }
             }
         }
@@ -138,6 +140,17 @@ async fn main() {
         }
         if root_ui().button(None, "PLAY") {
             play = !play;
+        }
+        if !err {
+            if let wfc::ModelStateEnum::Bad(..) = &model.state {
+                println!("=================================");
+                println!("=================================");
+                println!("BAD BAD NEWS");
+                println!("=================================");
+                println!("=================================");
+                println!("{:?}", model);
+                err = true;
+            }
         }
         // if root_ui().button(None, "Collapse") {
         //     model.collapse();

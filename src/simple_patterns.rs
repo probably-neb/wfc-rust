@@ -17,33 +17,46 @@ pub struct SimplePattern {
 
 fn ora(a: [bool; 5], b: [bool; 5]) -> [bool; 5] {
     let mut c: [bool; 5] = [false; 5];
-    for i in 0..5 {
+    for i in (0..5) {
         c[i] = a[i] | b[i];
     }
     return c;
 }
 
-const BI: [bool; 5] = [true, false, false, false, false];
-const DLI: [bool; 5] = [false, true, false, false, false];
-const LUI: [bool; 5] = [false, false, true, false, false];
-const RDI: [bool; 5] = [false, false, false, true, false];
-const URI: [bool; 5] = [false, false, false, false, true];
-const ALLI: [bool; 5] = [true, true, true, true, true];
+const BLANK: [bool; 5] = [true, false, false, false, false];
+const DOWN_LEFT: [bool; 5] = [false, true, false, false, false];
+const LEFT_UP: [bool; 5] = [false, false, true, false, false];
+const RIGHT_DOWN: [bool; 5] = [false, false, false, true, false];
+const UP_RIGHT: [bool; 5] = [false, false, false, false, true];
+const ALL: [bool; 5] = [true, true, true, true, true];
+// const BLANK: [bool; 5] = [true, true, true, true, true];
+// const DOWN_LEFT: [bool; 5] = [true, true, true, true, true];
+// const LEFT_UP: [bool; 5] = [true, true, true, true, true];
+// const RIGHT_DOWN: [bool; 5] = [true, true, true, true, true];
+// const UP_RIGHT: [bool; 5] = [true, true, true, true, true];
+// const ALL: [bool; 5] = [true, true, true, true, true];
+
 
 pub fn get_simple_patterns() -> [SimplePattern; 5] {
-    let li = ora(LUI, DLI);
-    let ri = ora(RDI, URI);
-    let ui = ora(LUI, URI);
-    let di = ora(RDI, DLI);
+
+    let has_left: [bool; 5] = ora(LEFT_UP, DOWN_LEFT);
+    let has_right: [bool; 5] = ora(RIGHT_DOWN, UP_RIGHT);
+    let has_up: [bool; 5] = ora(LEFT_UP, UP_RIGHT);
+    let has_down: [bool; 5] = ora(RIGHT_DOWN, DOWN_LEFT);
+
+    let blank_on_left: [bool; 5] = ora(has_left, BLANK);
+    let blank_on_up: [bool; 5] = ora(has_up, BLANK);
+    let blank_on_right: [bool; 5] = ora(has_right, BLANK);
+    let blank_on_down: [bool; 5] = ora(has_down, BLANK);
 
     let blank: SimplePattern = SimplePattern {
         id: 0,
         name: "blank".to_string(),
         allowed_neighbors: [
-            (LEFT, li),  //left
-            (UP, ui),    //up
-            (RIGHT, ri), //right
-            (DOWN, di),  // down
+            (LEFT, blank_on_right),  //left
+            (UP, blank_on_down),    //up
+            (RIGHT, blank_on_left), //right
+            (DOWN, blank_on_up),  // down
         ],
         img: Image {
             width: 4,
@@ -61,10 +74,10 @@ pub fn get_simple_patterns() -> [SimplePattern; 5] {
         id: 1,
         name: "dl".to_string(),
         allowed_neighbors: [
-            (LEFT, ri),            //left
-            (UP, ora(ui, BI)),    //up
-            (RIGHT, ora(ri, BI)), //right
-            (DOWN, ui),            // down
+            (LEFT, has_right),            //left
+            (UP, blank_on_down),    //up
+            (RIGHT, blank_on_left), //right
+            (DOWN, has_up),            // down
         ],
         img: Image {
             width: 4,
@@ -82,10 +95,10 @@ pub fn get_simple_patterns() -> [SimplePattern; 5] {
         id: 2,
         name: "lu".to_string(),
         allowed_neighbors: [
-            (LEFT, ri),            //left
-            (UP, di),              //up
-            (RIGHT, ora(ri, BI)), //right
-            (DOWN, ora(di, BI)),  // down
+            (LEFT, has_right),            //left
+            (UP, has_down),              //up
+            (RIGHT, blank_on_left), //right
+            (DOWN, blank_on_up),  // down
         ],
         img: Image {
             width: 4,
@@ -103,10 +116,10 @@ pub fn get_simple_patterns() -> [SimplePattern; 5] {
         id: 3,
         name: "rd".to_string(),
         allowed_neighbors: [
-            (LEFT, ora(li, BI)), //left
-            (UP, ora(ui, BI)),   //up
-            (RIGHT, li),          //right
-            (DOWN, ui),           // down
+            (LEFT, blank_on_right), //left
+            (UP, blank_on_down),   //up
+            (RIGHT, has_left),          //right
+            (DOWN, has_up),           // down
         ],
         img: Image {
             width: 4,
@@ -124,10 +137,10 @@ pub fn get_simple_patterns() -> [SimplePattern; 5] {
         id: 4,
         name: "ur".to_string(),
         allowed_neighbors: [
-            (LEFT, ora(li, BI)), //left
-            (UP, di),             //up
-            (RIGHT, li),          //right
-            (DOWN, ora(di, BI)), //down
+            (LEFT, blank_on_right), //left
+            (UP, has_down),             //up
+            (RIGHT, has_left),          //right
+            (DOWN, blank_on_up), //down
         ],
         img: Image {
             width: 4,
@@ -153,15 +166,26 @@ mod test {
         let a = [true, true, true, true, true];
         let b = [true, true, true, true, true];
         assert_eq!(ora(a , b), [true, true, true, true, true]);
-        assert_eq!(b, [true, true, true, true, true]);
-        assert_eq!(a, [true, true, true, true, true]);
     }
+
+    #[test]
+    fn ora_all_false() {
+        let a = [false, false, false, false, false];
+        let b = [false, false, false, false, false];
+        assert_eq!(ora(a , b), [false, false, false, false, false]);
+    }
+
+    #[test]
+    fn ora_one_true() {
+        let a = [true, false, false, false, false];
+        let b = [false, false, false, false, false];
+        assert_eq!(ora(a , b), [true, false, false, false, false]);
+    }
+
     #[test]
     fn ora_alternating_is_all_true() {
         let a = [false, true, false, true, false];
         let b = [true, false, true, false, true];
         assert_eq!(ora(a , b), [true, true, true, true, true]);
-        assert_eq!(a, [false, true, false, true, false]);
-        assert_eq!(b, [true, false, true, false, true]);
     }
 }

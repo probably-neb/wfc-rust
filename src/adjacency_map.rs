@@ -61,9 +61,16 @@ impl AdjacencyMap<Vec<Domain>> {
         return adj_map;
     }
 
-    pub fn domain_in_dir(&self, dir: CardinalDir, filter: &Domain) -> Domain {
-        let vec = Domain::filter(filter, &self[dir]);
-        return Domain::andv(&vec);
+    pub fn domain_in_dir(&self, dir: CardinalDir, filter: &Domain) -> Option<Domain> {
+        let domains_in_dir = &self[dir];
+        let len = domains_in_dir.len();
+        let vec = Domain::filter(filter, domains_in_dir);
+
+        return if vec.is_empty() {
+            None
+        } else {
+            Some(Domain::andv(&vec, len))
+        }
     }
 }
 
