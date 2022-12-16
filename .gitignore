@@ -3,3 +3,5 @@ Cargo.lock
 .vscode
 tags
 checker.png
+flamegraph.svg
+perf.data
