@@ -1,75 +1,84 @@
-use core::time;
-use std::thread;
+// use core::time;
+// use std::thread;
 
-use macroquad::prelude::*;
-use macroquad::texture::{self, Image, Texture2D};
-use macroquad::ui::root_ui;
+use image::io::Reader as ImageReader;
+use image::Rgba;
+// use macroquad::prelude::*;
+// use macroquad::texture::{self, Image, Texture2D};
+// use macroquad::ui::root_ui;
+use glam::UVec2;
 
-use wfc_rust::preprocessor;
+use wfc_rust::preprocessor::PreProcessor;
+// use wfc_rust::IdMap;
 
-#[macroquad::main("WAVE FUNCTION COLLAPSE")]
-async fn main() {
-    let mut zoom: f32 = 0.01;
-    let mut target: (f32, f32) = (0., 0.);
-    let mut prev_mouse_pos: (f32, f32) = (0., 0.);
+use pixels::Pixels;
+use winit;
 
-    let mut play = false;
-
+fn main() {
+    let tile_size = 32;
+    let image = ImageReader::open("./inputs/big-circuit.png")
+        .expect("image loadable")
+        .decode()
+        .expect("image decodable");
+    let mut processor = PreProcessor::new(image.flipv().to_rgba8(), tile_size);
+    let (tile_freqs, adjacency_rules) = processor.process();
+    let output_dims: UVec2 = processor.image.dimensions().into();
+    let mut window = Window::new(output_dims, UVec2::splat(4));
+    // let patterns = processor.tiles.iter().map(|&loc| processor.pattern_at(loc));
+    window.update(image.to_rgba8().pixels());
     loop {
-        if is_mouse_button_down(MouseButton::Right) {
-            let mouse_pos = mouse_position();
-            target.0 += -1.0 * (mouse_pos.0 - prev_mouse_pos.0) * zoom;
-            target.1 += (mouse_pos.1 - prev_mouse_pos.1) * zoom;
-        }
-        if is_key_down(KeyCode::W) {
-            target.1 += 1.0;
-        }
-        if is_key_down(KeyCode::S) {
-            target.1 -= 1.0;
-        }
-        if is_key_down(KeyCode::A) {
-            target.0 -= 1.0;
-        }
-        if is_key_down(KeyCode::D) {
-            target.0 += 1.0;
-        }
-        match mouse_wheel() {
-            (_x, y) if y != 0.0 => {
-                // Normalize mouse wheel values is browser (chromium: 53, firefox: 3)
-                #[cfg(target_arch = "wasm32")]
-                let y = if y < 0.0 {
-                    -1.0
-                } else if y > 0.0 {
-                    1.0
-                } else {
-                    0.0
-                };
-                zoom *= 1.1f32.powf(y);
-            }
-            _ => (),
-        }
+        window.render();
+    }
+}
 
-        set_camera(&Camera2D {
-            zoom: vec2(zoom, zoom * screen_width() / screen_height()),
-            // zoom: vec2(0.01,0.01),
-            // target: vec2(15.0, 15.0),
-            target: vec2(target.0, target.1),
-            // offset: vec2(offset.0, offset.1),
-            ..Default::default()
-        });
+pub struct Window {
+    _window: winit::window::Window,
+    pixels: Pixels,
+    grid_size: UVec2,
+}
 
-        if play {
-            thread::sleep(time::Duration::from_millis(10));
-            // model.step();
+impl Window {
+    pub fn new(grid_size: UVec2, pixel_size: UVec2) -> Self {
+        let event_loop = winit::event_loop::EventLoop::new();
+        let size =
+            winit::dpi::LogicalSize::new(grid_size.x * pixel_size.x, grid_size.y * pixel_size.y);
+        let window = winit::window::WindowBuilder::new()
+            .with_inner_size(size)
+            .with_min_inner_size(size)
+            .with_max_inner_size(size)
+            .build(&event_loop)
+            .unwrap();
+        let hidpi_factor = window.scale_factor();
+        let p_size = size.to_physical::<f64>(hidpi_factor);
+        let surface_texture = pixels::SurfaceTexture::new(
+            p_size.width.round() as u32,
+            p_size.height.round() as u32,
+            &window,
+        );
+        let pixels = pixels::Pixels::new(grid_size.x, grid_size.y, surface_texture).unwrap();
+        Self {
+            _window: window,
+            pixels,
+            grid_size,
         }
-        if root_ui().button(None, "PLAY") {
-            play = !play;
+    }
+
+    pub fn render(&self) {
+        self.pixels.render().unwrap();
+    }
+
+    pub fn update<'a>(
+        &mut self,
+        image: impl Iterator<Item = &'a Rgba<u8>>,
+    ) {
+        let frame = self.pixels.get_frame_mut();
+        for (cell_pixel, pixel) in image.zip(frame.chunks_exact_mut(4)) {
+            // let [r, g, b, a] = image_patterns.weighted_average_colour(&cell).0;
+            let [r, g, b, a] = cell_pixel.0;
+            pixel[0] = r;
+            pixel[1] = g;
+            pixel[2] = b;
+            pixel[3] = a;
         }
-        // if root_ui().button(None, "Collapse") {
-        //     model.collapse();
-        //     // model.tile_at_mut(Loc {x:0,y:0}).dom =
-        // }
-        prev_mouse_pos = mouse_position();
-        next_frame().await
     }
 }
