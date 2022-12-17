@@ -1,11 +1,15 @@
 use glam::{IVec2, UVec2};
 use std::{
     collections::{HashMap, HashSet},
-    ops::{Deref, DerefMut, Index, IndexMut, Neg},
+    iter::zip,
+    ops::{Index, IndexMut, Neg},
     slice::Iter,
 };
 
-#[derive(Debug, Default)]
+use crate::{IdMap, TileId};
+use derive_more::{Deref, DerefMut};
+
+#[derive(Debug, Default, DerefMut, Deref)]
 pub struct AdjacencyRules {
     map: HashMap<usize, [HashSet<usize>; 4]>,
 }
@@ -52,10 +56,7 @@ impl AdjacencyRules {
         let by_dirs: Vec<usize> = CardinalDirs::iter()
             .map(|&d| self.enabled_by(from, d).len())
             .collect();
-        counts[0] = by_dirs[0];
-        counts[1] = by_dirs[1];
-        counts[2] = by_dirs[2];
-        counts[3] = by_dirs[3];
+        counts.copy_from_slice(&by_dirs);
         return counts;
     }
 
@@ -69,36 +70,25 @@ impl AdjacencyRules {
 
 type Enabled = [usize; 4];
 
-#[derive(Debug, Clone)]
-pub struct EnablerDict(Vec<Enabled>);
-
-impl Deref for EnablerDict {
-    type Target = Vec<Enabled>;
-
-    fn deref(&self) -> &Self::Target {
-        return &self.0;
-    }
-}
-
-impl DerefMut for EnablerDict {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        return &mut self.0;
-    }
-}
+#[derive(Debug, Clone, Deref, DerefMut)]
+pub struct EnablerDict(IdMap<Option<Enabled>>);
 
 impl EnablerDict {
     pub fn new(adjacency_rules: &AdjacencyRules) -> Self {
         let enablers = adjacency_rules
             .map
             .keys()
-            .map(|&id| adjacency_rules.enabled_by_count(id))
+            .map(|&id| match adjacency_rules.enabled_by_count(id) {
+                [0, 0, 0, 0] => None,
+                counts => Some(counts),
+            })
             .collect();
         return Self(enablers);
     }
 
-    pub fn remove(
+    pub fn remove_single(
         &mut self,
-        from: usize,
+        from: TileId,
         cell_loc: UVec2,
         dir: CardinalDirs,
         adjacency_rules: &AdjacencyRules,
@@ -107,27 +97,35 @@ impl EnablerDict {
         let events: Vec<TileRemovalEvent> = enabled
             .iter()
             .filter_map(|&id| {
-                let count = self[id][dir];
-                match count {
-                    1 => {
-                        // decrementing this tile would remove all enablers in a dir
-                        // making the possibility of this tile impossible
-                        // remove the tile completely
-                        self[id] = [0; 4];
-                        // save event for change propogation
-                        Some(TileRemovalEvent {
-                            tile_id: from,
-                            cell_loc,
-                        })
-                    }
+                match self[id] {
                     // event is already removed
                     // do nothing
-                    0 => None,
+                    None => None,
                     // event has enablers
-                    // decrement enabler count
-                    c => {
-                        self[id][dir] = c - 1;
-                        None
+                    Some(mut counts) => {
+                        let mut count = counts[dir];
+                        match count {
+                            // decrementing this tile would remove all enablers in a dir
+                            // making the this tile impossible
+                            // i.e. this tile is incompatible with one of the neighboring cells
+                            // enabled tiles
+                            1 => {
+                                // remove (disable) the tile completely
+                                self[id] = None;
+                                // save event for change propogation
+                                Some(TileRemovalEvent {
+                                    tile_id: from,
+                                    cell_loc,
+                                })
+                            }
+                            // other count `c`
+                            other_count => {
+                                // decrement enabler count
+                                count -= 1;
+                                // no tile TileRemovalEvent
+                                None
+                            }
+                        }
                     }
                 }
             })
@@ -136,6 +134,46 @@ impl EnablerDict {
             return None;
         } else {
             return Some(events);
+        }
+    }
+
+    pub fn allowed_iter(&self) -> impl Iterator<Item = TileId> + '_ {
+        return self
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, b)| b.map(|_| idx));
+    }
+
+    pub fn filter_allowed<'a, T>(&'a self, other: &'a Vec<T>) -> impl Iterator<Item = T> + '_
+    where
+        T: Clone,
+    {
+        assert_eq!(self.len(), other.len());
+        return zip(&self.0, other).filter_map(|(b, v)| b.map(|_| v.clone()));
+    }
+
+    pub fn filter_allowed_enumerate<'a, T>(
+        &'a self,
+        other: &'a Vec<T>,
+    ) -> impl Iterator<Item = (TileId, T)> + '_
+    where
+        T: Clone,
+    {
+        assert_eq!(self.len(), other.len());
+        return zip(&self.0, other)
+            .enumerate()
+            .filter_map(|(i, (&b, v))| b.map(|_| (i, v.clone())));
+    }
+    pub fn disallow_all_but(&mut self, exception: TileId) {
+        for (i, b) in self.iter_mut().enumerate() {
+            if i == exception {
+                if b.is_none() {
+                    unreachable!("Contradiction: TileId `{}` already not allowed", i);
+                }
+                // *b = Some(..);
+            } else {
+                *b = None;
+            }
         }
     }
 }
@@ -210,3 +248,51 @@ impl<T> IndexMut<CardinalDirs> for [T; 4] {
         return &mut self[index];
     }
 }
+
+// pub struct Domain(IdMap<bool>);
+// impl Domain {
+//     fn new(len: usize) -> Self {
+//         return Self(vec![true; len]);
+//     }
+//     pub fn allowed_iter(&self) -> impl Iterator<Item = TileId> + '_ {
+//         return self
+//             .iter()
+//             .enumerate()
+//             .filter_map(|(idx, &b)| if b { Some(idx) } else { None });
+//     }
+//     pub fn filter_allowed<'a, T>(&'a self, other: &'a Vec<T>) -> impl Iterator<Item = T> + '_
+//     where
+//         T: Clone,
+//     {
+//         assert_eq!(self.len(), other.len());
+//         return zip(&self.0, other).filter_map(|(&b, v)| if b { Some(v.clone()) } else { None });
+//     }
+//     pub fn filter_allowed_enumerate<'a, T>(
+//         &'a self,
+//         other: &'a Vec<T>,
+//     ) -> impl Iterator<Item = (TileId, T)> + '_
+//     where
+//         T: Clone,
+//     {
+//         assert_eq!(self.len(), other.len());
+//         return zip(&self.0, other).enumerate().filter_map(|(i, (&b, v))| {
+//             if b {
+//                 Some((i, v.clone()))
+//             } else {
+//                 None
+//             }
+//         });
+//     }
+//     pub fn disallow_all_but(&mut self, exception: TileId) {
+//         for (i, b) in self.iter_mut().enumerate() {
+//             if i == exception {
+//                 if !*b {
+//                     unreachable!("Contradiction: TileId `{}` already not allowed", i);
+//                 }
+//                 // *b = true;
+//             } else {
+//                 *b = false;
+//             }
+//         }
+//     }
+// }

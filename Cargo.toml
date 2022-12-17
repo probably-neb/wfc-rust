@@ -3,11 +3,16 @@ name = "wfc-rust"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 image = "0.24.4"
 glam = "0.22.0"
 rand = "0.8.5"
 winit = "0.27.5"
 pixels = "0.10.0"
+derive_more = {version = "0.99.17", default-features=false, features = [
+             "deref",
+             "deref_mut",
+             "index",
+             "index_mut",
+             "from",
+]}

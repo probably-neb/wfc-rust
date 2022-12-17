@@ -61,7 +61,6 @@ impl PreProcessor {
         let (max_x, max_y) = (loc + self.tile_size as u32).into();
         for x in min_x..max_x {
             for y in min_y..max_y {
-                // pixels.push(self.image[(x, y)].into());
                 let mut rgba: Vec<u8> = self.image[(x,y)].0.to_owned().to_vec();
                 pixels.append(&mut rgba);
             }
@@ -76,28 +75,17 @@ impl PreProcessor {
         for x in min_x..max_x {
             for y in min_y..max_y {
                 pixels.push(self.image[(x, y)]);
-                // let mut rgba: Vec<u8> = self.image[(x,y)].0.to_owned().to_vec();
-                // pixels.append(&mut rgba);
             }
         }
         return pixels;
     }
 
-    fn store_pattern_locs(&mut self) {
-        self.tiles = vec![UVec2::default(); self.pattern_ids.len()];
-        // unsorted vec of unique (id,pattern) entries
-        for (&loc, &id) in &self.tile_loc_map {
-            self.tiles[id] = loc;
-        }
-    }
-    // fn hash_tiles(&self, locs: Vec<UVec2>) -> HashMap<UVec2,
-
-    pub fn process(&mut self) -> (IdMap<usize>, AdjacencyRules) {
+    pub fn process(&mut self) -> WfcData {
         // incremented to assign each tile a unique id
         let mut num_unique_tiles = 0;
         // a map from tile pixels to it's tile id let mut tile_freqs: Vec<usize> = Vec::new();
-        let mut adj_rules = AdjacencyRules::new();
-        let mut tile_freqs: IdMap<usize> = IdMap::new();
+        let mut adjacency_rules = AdjacencyRules::new();
+        let mut tile_frequencies: IdMap<usize> = IdMap::new();
 
         // iter over tile locations and store tile pixels
         // and keep track of unique tiles
@@ -110,9 +98,9 @@ impl PreProcessor {
                 num_unique_tiles += 1;
             }
             if !new_tile {
-                tile_freqs[self.pattern_ids[&pattern]] += 1;
+                tile_frequencies[self.pattern_ids[&pattern]] += 1;
             } else {
-                tile_freqs.push(1);
+                tile_frequencies.push(1);
             }
             let id = self.pattern_ids[&pattern];
             self.tile_loc_map.insert(loc, id);
@@ -127,20 +115,34 @@ impl PreProcessor {
                 let left_loc = loc - UVec2 { x: tsize, y: 0 };
                 let left_id = self.tile_loc_map[&left_loc];
                 // and reverse
-                adj_rules.allow_bi(id, left_id, Left);
+                adjacency_rules.allow_bi(id, left_id, Left);
             }
             if !on_bottom_edge {
                 let bottom_loc = loc - UVec2 { x: 0, y: tsize };
                 let bottom_id = self.tile_loc_map[&bottom_loc];
                 // and reverse
-                adj_rules.allow_bi(id, bottom_id, Down);
+                adjacency_rules.allow_bi(id, bottom_id, Down);
             }
         }
-        self.store_pattern_locs();
+
+        // fill self.tiles
+        self.tiles = vec![UVec2::default(); self.pattern_ids.len()];
+        // unsorted vec of unique (id,pattern) entries
+        for (&loc, &id) in &self.tile_loc_map {
+            self.tiles[id] = loc;
+        }
         assert!(!self.pattern_ids.is_empty());
         assert!(!self.tiles.is_empty());
-        return (tile_freqs, adj_rules);
+
+        let patterns = self.tiles.iter().map(|&loc| self.pattern_at(loc)).collect();
+        return WfcData { tile_frequencies, adjacency_rules, patterns };
     }
+}
+
+pub struct WfcData {
+    pub tile_frequencies: IdMap<usize>,
+    pub adjacency_rules: AdjacencyRules,
+    pub patterns: IdMap<Pattern>,
 }
 
 #[cfg(test)]
@@ -192,7 +194,7 @@ mod test {
     #[test]
     fn extract_tiles() {
         let mut proc = checker_proc();
-        let (tile_freqs, _adj_rules) = proc.process();
+        let WfcData { tile_frequencies, adjacency_rules: _, patterns: _ } = proc.process();
         let pattern_ids = proc.pattern_ids;
         let tiles = proc.tile_loc_map;
         // tile ids
@@ -203,19 +205,20 @@ mod test {
         assert_eq!(ids[1], &1);
 
         // tile_freqs
-        assert_eq!(tile_freqs.iter().sum::<usize>(), 16);
-        assert_eq!(tile_freqs[0], tile_freqs[1]);
+        assert_eq!(tile_frequencies.iter().sum::<usize>(), 16);
+        assert_eq!(tile_frequencies[0], tile_frequencies[1]);
 
         // tiles
         assert_eq!(tiles.len(), 16);
         // max id
-        assert_eq!(*tiles.values().max().unwrap(), tile_freqs.len() - 1);
+        assert_eq!(*tiles.values().max().unwrap(), tile_frequencies.len() - 1);
     }
 
     #[test]
     fn generate_adj_rules() {
         let mut proc = checker_proc();
-        let (_tile_freqs, adj_rules) = proc.process();
+        let data = proc.process();
+        let adj_rules = data.adjacency_rules;
         for i in 0..4 {
             for j in 0..3 {
                 print!("{}", proc.image[(i * 4, j * 4)][0] / 255);
