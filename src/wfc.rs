@@ -1,59 +1,41 @@
 use std::{
     cmp::Ordering,
     collections::BinaryHeap,
-    iter::zip,
+    iter::{repeat, zip},
     ops::{Index, IndexMut},
 };
 
+use derive_more::{Deref, DerefMut};
 use glam::UVec2;
-use derive_more::{Deref,DerefMut};
 
 use crate::{
     adjacency_rules::{AdjacencyRules, EnablerDict, TileRemovalEvent},
-    Area, Grid, IdMap, TileId,
+    preprocessor::{Pattern, RgbaArrPattern},
+    tile::{IdMap, TileId},
+    Area, Grid,
 };
 
+/// A Cell corresponds to a pattern in the output image
+/// It tracks the possible tiles (and their corresponding patterns) from
+/// the input image
+/// When the number of possible tiles is 1 the cell is considered to
+/// be "collapsed" and in it's final state
 #[derive(Debug, Clone)]
 pub struct Cell {
     pub collapsed: bool,
     pub domain: EnablerDict,
-    counts: Vec<usize>,
-    shannons: Vec<f32>,
+    pub probability_dict: ProbabilityDict,
     pub loc: UVec2,
 }
 
 impl Cell {
-    fn new(len: usize, enabler_dict: EnablerDict, freqs: Vec<usize>, loc: UVec2) -> Self {
-        let counts = freqs;
-        let shannons = counts
-            .iter()
-            .map(|&freq| (freq as f32) * (freq as f32).log2())
-            .collect();
+    fn new(probability_dict: ProbabilityDict, enabler_dict: EnablerDict, loc: UVec2) -> Self {
         return Self {
             collapsed: false,
             domain: enabler_dict,
-            counts,
-            shannons,
+            probability_dict,
             loc,
         };
-    }
-    fn entropy(&self, tile_frequencies: &Vec<usize>) -> f32 {
-        if self.collapsed {
-            return 0_f32;
-        }
-        // Shannon Entropy = H(x) = -P(x)*log(P(x))
-        // H(x0..xn) = H(x0) + H(x1) ... H(xn)
-        // P(xi) = wi / sum(w)
-        // where wi is the weight of xi and sum(w) is the sum of the weights
-        // H(x) = log(sum(w))- (w0*log(w0) -w1*log(w1) ... -wn*log(wn)) / sum(w)
-        let total_count = self.domain.filter_allowed(tile_frequencies).sum::<usize>() as f32;
-        let total_shannon = self
-            .domain
-            .filter_allowed(tile_frequencies)
-            .map(|freq| (freq as f32) * (freq as f32).log2())
-            .sum::<f32>();
-        // H(x) = log(sum(w))- (w0*log(w0) -w1*log(w1) ... -wn*log(wn)) / sum(w)
-        return total_count.log2() - (total_shannon / total_count);
     }
 
     fn choose_collapse_tile(&self) -> TileId {
@@ -69,10 +51,48 @@ impl Cell {
             .expect("rand works");
     }
 
-    fn collapse(&mut self) {
+    fn collapse(&mut self) -> Vec<TileRemovalEvent> {
         let fin: TileId = self.choose_collapse_tile();
-        self.domain.disallow_all_but(fin);
         self.collapsed = true;
+        let tile_removed_events = self.domain.remove_all_but(fin);
+        return tile_removed_events;
+    }
+
+    pub fn render(&self, patterns: &Vec<RgbaArrPattern>, tile_size: usize) -> RgbaArrPattern {
+        let allowed_patterns: Vec<(TileId, RgbaArrPattern)> =
+            self.domain.filter_allowed_enumerate(patterns).collect();
+        if allowed_patterns.len() == 1 {
+            return allowed_patterns[0].1.to_owned();
+        }
+        return allowed_patterns
+            .iter()
+            .map(|(id, p)| -> Vec<[usize; 4]> {
+                let count: usize = self.probability_dict.counts[*id];
+                p.iter()
+                    .map(|pixel| pixel.map(|channel| channel as usize * count))
+                    .collect()
+            })
+            .fold(vec![[0; 4]; tile_size * tile_size], |acc, pat| {
+                zip(acc, pat)
+                    .map(|(acc_pix, pat_pix)| {
+                        [
+                            acc_pix[0] + pat_pix[0],
+                            acc_pix[1] + pat_pix[1],
+                            acc_pix[2] + pat_pix[2],
+                            acc_pix[3] + pat_pix[3],
+                        ]
+                    })
+                    .collect()
+            })
+            .iter()
+            .map(|weighted_pix| {
+                let mut fin_pix = weighted_pix.map(|channel| {
+                    (channel / self.probability_dict.total_count) as u8
+                });
+                fin_pix[3] = 255;
+                fin_pix
+            })
+            .collect();
     }
 }
 
@@ -85,6 +105,7 @@ pub struct Model {
     dims: UVec2,
     wave: Vec<TileRemovalEvent>,
     remaining_uncollapsed: usize,
+    tile_size: usize,
 }
 
 impl Model {
@@ -93,15 +114,15 @@ impl Model {
 
         let num_cells = Grid(dims).area();
 
+        // TODO: consider just initializing these in  cell init
+        // for cleanliness
+        let probability_dict = ProbabilityDict::new(&tile_frequencies);
+        let enabler_dict = EnablerDict::build(&adjacency_rules);
+
         let grid = dbg!(Grid(dims));
-        let mut vals = Vec::with_capacity(dbg!(grid.area()) as usize);
+        let mut vals = Vec::with_capacity(num_cells as usize);
         for loc in grid.iter_locs() {
-            let cell = Cell::new(
-                len,
-                EnablerDict::new(&adjacency_rules),
-                tile_frequencies.clone(),
-                dbg!(loc),
-            );
+            let cell = Cell::new(probability_dict.clone(), enabler_dict.with_loc(loc), loc);
             vals.push(cell);
         }
         let board = Board { grid, vals };
@@ -123,8 +144,7 @@ impl Model {
         return &self.board[loc];
     }
 
-    pub fn get_cell_to_collapse(&mut self) -> UVec2 {
-
+    pub fn get_cell_to_collapse(&mut self) -> Option<UVec2> {
         // while let Some(entry) = self.entropy_heap.pop() {
         //     let cell = &self.board[entry.loc];
         //     if !cell.collapsed {
@@ -132,14 +152,22 @@ impl Model {
         //     }
         // }
 
-        return self.iter_cells().find_map(|c| if !c.collapsed {Some(c.loc)} else {None}).expect("no Contradiction");
+        return self
+            .iter_cells()
+            .find_map(|c| if !c.collapsed { Some(c.loc) } else { None })
 
-        unreachable!("Entropy Heap should never be empty");
+        // unreachable!("Entropy Heap should never be empty");
     }
 
     pub fn collapse_cell(&mut self) {
-        let loc = self.get_cell_to_collapse();
-        self.get_cell_mut(loc).collapse();
+        match self.get_cell_to_collapse() {
+            Some(loc) => {
+                let tile_removed_events = self.get_cell_mut(loc).collapse();
+                self.wave = tile_removed_events;
+                self.remaining_uncollapsed -= 1;
+            }
+            None => ()
+        }
     }
 
     pub fn step(&mut self) {
@@ -161,9 +189,8 @@ impl Model {
     }
 }
 
-
 #[derive(Debug, Deref, DerefMut, Default)]
-pub struct Board {
+struct Board {
     grid: Grid,
     #[deref_mut]
     #[deref]
@@ -190,6 +217,66 @@ impl IndexMut<UVec2> for Board {
     fn index_mut(&mut self, index: UVec2) -> &mut Self::Output {
         let i = self.index_grid(index);
         return &mut self.vals[i];
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ProbabilityDict {
+    counts: IdMap<usize>,
+    total_shannons: f32,
+    total_count: usize,
+}
+
+impl ProbabilityDict {
+    fn new(tile_frequencies: &IdMap<usize>) -> Self {
+        let counts = tile_frequencies.to_owned();
+        let total_shannons = counts.iter().map(|&freq| Self::partial_shannon(freq)).sum();
+        let total_count = tile_frequencies.iter().sum();
+        return Self {
+            counts,
+            total_shannons,
+            total_count,
+        };
+    }
+
+    /// one of the `w0 * log(w0)` terms in the simplified entropy equation
+    #[inline]
+    fn partial_shannon(freq: usize) -> f32 {
+        let freq = freq as f32;
+        return freq * freq.log2();
+    }
+
+    /// Calculates the Shannon Entropy `H(x) = -P(x)*log(P(x))`
+    ///
+    /// The Shannon Entropy For set `x` of items `x0..xn` is
+    /// `H(x) = H(x0) + H(x1) ... H(xn)`
+    ///
+    /// The Probability of an entry `xi` is `P(xi) = wi / sum(w)`
+    /// where `wi` is the weight of xi i.e. `self.counts[i]`
+    /// and `sum(w)` is the sum of the weights i.e. `self.total_count`
+    ///
+    /// The simplified Entropy Equation is then:
+    /// `H(x) = log(sum(w))- (w0*log(w0) -w1*log(w1) ... -wn*log(wn)) / sum(w)`
+    fn entropy(&self) -> f32 {
+        if self.total_count == 0 {
+            return std::f32::NAN;
+        }
+        let total_count: f32 = self.total_count as f32;
+        // Calculate entropy using simplified shannon entropy
+        return total_count.log2() - (self.total_shannons / total_count);
+    }
+
+    /// Returns an IdMap of the relative probabilities of each tile
+    pub fn relative_probabilities(&self) -> IdMap<f32> {
+        return zip(&self.counts, repeat(self.total_count as f32))
+            .map(|(&c, t)| (c as f32) / t)
+            .collect();
+    }
+
+    fn remove(&mut self, id: TileId) {
+        self.total_count -= self.counts[id];
+        self.total_shannons -= Self::partial_shannon(self.counts[id]);
+        self.counts[id] = 0;
     }
 }
 

@@ -5,12 +5,13 @@ use std::collections::HashMap;
 use crate::{adjacency_rules::{
     AdjacencyRules,
     CardinalDirs::{Down, Left},
-}, IdMap};
+}, tile::IdMap};
 
 /// The actual pixel data of the tile_size x tile_size rectangle (PatternRect)
 /// corresponding to a tile in the source image
-pub type Pattern = Vec<Rgba<u8>>;
-pub type RgbaPattern = Vec<u8>;
+pub type RgbaPattern = Vec<Rgba<u8>>;
+pub type RgbaArrPattern = Vec<[u8; 4]>;
+pub type Pattern = Vec<u8>;
 type LocIdHMap = HashMap<UVec2, usize>;
 type PatternIdHMap = HashMap<RgbaPattern, usize>;
 // type IdPatternHMap = HashMap<usize, Pattern>;
@@ -55,7 +56,31 @@ impl PreProcessor {
         return locs;
     }
 
+    pub fn rgba_arr_pattern_at(&self, loc: UVec2) -> RgbaArrPattern {
+        let mut pixels = Vec::with_capacity(self.tile_size * self.tile_size);
+        let (min_x, min_y) = loc.into();
+        let (max_x, max_y) = (loc + self.tile_size as u32).into();
+        for x in min_x..max_x {
+            for y in min_y..max_y {
+                pixels.push(self.image[(x, y)].0);
+            }
+        }
+        return pixels;
+    }
+
     pub fn rgba_pattern_at(&self, loc: UVec2) -> RgbaPattern {
+        let mut pixels = Vec::with_capacity(self.tile_size * self.tile_size);
+        let (min_x, min_y) = loc.into();
+        let (max_x, max_y) = (loc + self.tile_size as u32).into();
+        for x in min_x..max_x {
+            for y in min_y..max_y {
+                pixels.push(self.image[(x, y)]);
+            }
+        }
+        return pixels;
+    }
+
+    pub fn pattern_at(&self, loc: UVec2) -> Pattern {
         let mut pixels = Vec::with_capacity(self.tile_size * self.tile_size * 4);
         let (min_x, min_y) = loc.into();
         let (max_x, max_y) = (loc + self.tile_size as u32).into();
@@ -63,18 +88,6 @@ impl PreProcessor {
             for y in min_y..max_y {
                 let mut rgba: Vec<u8> = self.image[(x,y)].0.to_owned().to_vec();
                 pixels.append(&mut rgba);
-            }
-        }
-        return pixels;
-    }
-
-    pub fn pattern_at(&self, loc: UVec2) -> Pattern {
-        let mut pixels = Vec::with_capacity(self.tile_size * self.tile_size);
-        let (min_x, min_y) = loc.into();
-        let (max_x, max_y) = (loc + self.tile_size as u32).into();
-        for x in min_x..max_x {
-            for y in min_y..max_y {
-                pixels.push(self.image[(x, y)]);
             }
         }
         return pixels;
@@ -134,7 +147,7 @@ impl PreProcessor {
         assert!(!self.pattern_ids.is_empty());
         assert!(!self.tiles.is_empty());
 
-        let patterns = self.tiles.iter().map(|&loc| self.pattern_at(loc)).collect();
+        let patterns = self.tiles.iter().map(|&loc| self.rgba_arr_pattern_at(loc)).collect();
         return WfcData { tile_frequencies, adjacency_rules, patterns };
     }
 }
@@ -142,7 +155,7 @@ impl PreProcessor {
 pub struct WfcData {
     pub tile_frequencies: IdMap<usize>,
     pub adjacency_rules: AdjacencyRules,
-    pub patterns: IdMap<Pattern>,
+    pub patterns: IdMap<RgbaArrPattern>,
 }
 
 #[cfg(test)]

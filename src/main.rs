@@ -1,9 +1,12 @@
+use std::{iter::zip, thread, time::Duration};
+
 use glam::UVec2;
-use image::{io::Reader as ImageReader, Rgba};
+use image::{io::Reader as ImageReader, Rgba, Pixel};
 
 use wfc_rust::{
-    preprocessor::{Pattern, PreProcessor, WfcData},
-    wfc::Model, IdMap,
+    preprocessor::{Pattern, PreProcessor, WfcData, RgbaArrPattern},
+    wfc::Model,
+    tile::IdMap,
 };
 // use wfc_rust::IdMap;
 
@@ -27,30 +30,21 @@ fn main() {
     } = processor.process();
     let image_dims: UVec2 = processor.image.dimensions().into();
     let mut window = Window::new(image_dims, 2, TILE_SIZE);
-    // let clocs = Grid(UVec2::splat(2)).iter_locs();
-    // for (loc, pattern) in zip(clocs,patterns) {
-    //     window.update_grid_cell(loc, pattern);
-    // }
     let mut wfc = Model::new(
         adjacency_rules,
         tile_frequencies,
         image_dims / TILE_SIZE as u32,
     );
-    for _i in 0..4 {
-        wfc.collapse_cell();
-    }
-
-    for cell in wfc.iter_cells() {
-        window.update_grid_cell(
-            cell.loc,
-            cell.domain
-                .filter_allowed(&patterns)
-                .next()
-                .expect("no contradictions"),
-        );
-    }
 
     loop {
+        for cell in wfc.iter_cells() {
+            window.update_grid_cell(
+                cell.loc,
+                cell.render(&patterns, TILE_SIZE)
+            );
+        }
+        thread::sleep(Duration::from_millis(500));
+        wfc.collapse_cell();
         window.render();
     }
 }
@@ -97,7 +91,7 @@ impl Window {
         }
     }
 
-    fn update_grid_cell(&mut self, cell_coord: UVec2, pattern: Pattern) {
+    fn update_grid_cell(&mut self, cell_coord: UVec2, pattern: RgbaArrPattern) {
         let frame = self.pixels.get_frame_mut();
         // let pattern = domain.filter_allowed(&self.patterns).next().unwrap();
         let frame_coord = cell_coord * self.tile_size as u32;
@@ -108,15 +102,12 @@ impl Window {
                     y: y as u32,
                 } + frame_coord;
                 let idx = 4 * ((frame_idx.y * self.output_dimensions.x) + frame_idx.x) as usize;
-                let cell_pixel = pattern[y * self.tile_size + x].0;
+                // let cell_pixel = pattern[y * self.tile_size + x].0;
+                let cell_pixel: [u8; 4] = pattern[y * self.tile_size + x];
                 let frame_pixel = frame
                     .get_mut(idx..idx + 4)
                     .unwrap_or_else(|| panic!("pixel at {:?} should be in bounds but loc {cell_coord:?} and frame cell {frame_idx:?} aren't in bounds", frame_idx));
                 frame_pixel.copy_from_slice(&cell_pixel);
-                // frame[idx*4+0] = r;
-                // frame[idx*4+1] = g;
-                // frame[idx*4+2] = b;
-                // frame[idx*4+3] = a;
             }
         }
     }
@@ -128,12 +119,6 @@ impl Window {
     pub fn update<'a>(&mut self, image: impl Iterator<Item = &'a Rgba<u8>>) {
         let frame = self.pixels.get_frame_mut();
         for (cell_pixel, frame_pixel) in image.zip(frame.chunks_exact_mut(4)) {
-            // let [r, g, b, a] = image_patterns.weighted_average_colour(&cell).0;
-            // let [r, g, b, a] = cell_pixel.0;
-            // frame_pixel[0] = r;
-            // frame_pixel[1] = g;
-            // frame_pixel[2] = b;
-            // frame_pixel[3] = a;
             frame_pixel.copy_from_slice(&cell_pixel.0);
         }
     }

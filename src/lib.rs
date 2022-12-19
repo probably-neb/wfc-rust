@@ -1,12 +1,8 @@
 pub mod adjacency_rules;
 pub mod preprocessor;
 pub mod wfc;
+pub mod tile;
 
-/// A unique identifier for a tile
-pub type TileId = usize;
-
-/// A list of type T indexable by TileId
-pub type IdMap<T> = Vec<T>;
 
 pub trait Area {
     type Output;
