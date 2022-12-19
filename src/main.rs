@@ -8,6 +8,8 @@ use wfc_rust::{
     wfc::Model,
     tile::IdMap,
 };
+use simplelog::*;
+use std::fs::File;
 // use wfc_rust::IdMap;
 
 use pixels::Pixels;
@@ -18,6 +20,12 @@ const TILE_SIZE: usize = 64;
 // const OUTPUT_DIMS: UVec2 = UVec2 { x: 200, y: 200 };
 
 fn main() {
+    CombinedLogger::init(
+        vec![
+            TermLogger::new(LevelFilter::Info, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
+            WriteLogger::new(LevelFilter::Info, Config::default(), File::create("log").unwrap()),
+        ]
+    ).unwrap();
     let image = ImageReader::open("./inputs/celtic.png")
         .expect("image loadable")
         .decode()
