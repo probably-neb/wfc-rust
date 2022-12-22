@@ -1,4 +1,4 @@
-use crate::preprocessor::Pattern;
+use crate::preprocessor::RgbaPattern;
 
 /// A unique identifier for a tile
 pub type TileId = usize;
@@ -10,6 +10,6 @@ pub type IdMap<T> = Vec<T>;
 /// with additional info
 pub struct Tile {
     pub id: TileId,
-    pub pattern: Pattern,
+    pub pattern: RgbaPattern,
     pub frequency: u32,
 }

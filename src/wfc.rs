@@ -6,11 +6,11 @@ use std::{
 };
 
 use derive_more::{Deref, DerefMut};
-use glam::UVec2;
+use glam::{IVec2, UVec2};
 
 use crate::{
-    adjacency_rules::{AdjacencyRules, EnablerDict, TileRemovalEvent},
-    preprocessor::{Pattern, RgbaArrPattern},
+    adjacency_rules::{AdjacencyRules, CardinalDirs, EnablerDict},
+    preprocessor::Pattern,
     tile::{IdMap, TileId},
     Area, Grid,
 };
@@ -22,7 +22,7 @@ use crate::{
 /// be "collapsed" and in it's final state
 #[derive(Debug, Clone)]
 pub struct Cell {
-    pub collapsed: bool,
+    pub collapsed_to: Option<TileId>,
     pub domain: EnablerDict,
     pub probability_dict: ProbabilityDict,
     pub loc: UVec2,
@@ -31,15 +31,19 @@ pub struct Cell {
 impl Cell {
     fn new(probability_dict: ProbabilityDict, enabler_dict: EnablerDict, loc: UVec2) -> Self {
         return Self {
-            collapsed: false,
+            collapsed_to: None,
             domain: enabler_dict,
             probability_dict,
             loc,
         };
     }
 
+    pub fn collapsed(&self) -> bool {
+        return self.collapsed_to.is_some();
+    }
+
     fn choose_collapse_tile(&self) -> TileId {
-        if self.collapsed {
+        if self.collapsed() {
             unreachable!("Cell has already been collapsed");
         }
         use rand::seq::IteratorRandom;
@@ -48,18 +52,41 @@ impl Cell {
             .domain
             .allowed_iter()
             .choose(&mut rng)
-            .expect("rand works");
+            .expect("cell has possible tiles");
     }
 
     fn collapse(&mut self) -> Vec<TileRemovalEvent> {
         let fin: TileId = self.choose_collapse_tile();
-        self.collapsed = true;
-        let tile_removed_events = self.domain.remove_all_but(fin);
+        self.collapsed_to = Some(fin);
+        let removed_tile_ids = self.domain.remove_all_but(fin);
+        let tile_removed_events =
+            TileRemovalEvent::from_list_of_removed_tiles(removed_tile_ids, self.loc);
         return tile_removed_events;
     }
 
-    pub fn render(&self, patterns: &Vec<RgbaArrPattern>, tile_size: usize) -> RgbaArrPattern {
-        let allowed_patterns: Vec<(TileId, RgbaArrPattern)> =
+    fn remove_enabler(
+        &mut self,
+        enabler: TileId,
+        from_dir: CardinalDirs,
+        adjacency_rules: &AdjacencyRules,
+    ) -> Option<Vec<TileRemovalEvent>> {
+        if self.collapsed() {
+            // assert!(adjacency_rules.enabled_by(enabler, from_dir).contains(&self.collapsed_to.unwrap()), "Contradiction: trying to remove enabler {enabler} which enables {} which this cell is collapsed to", self.collapsed_to.unwrap());
+            // log::warn!("Contradiction: tried to remove enabler: {enabler} from cell that was collapsed to that tile");
+            return None;
+        }
+        let removed_tiles = self
+            .domain
+            .remove_single(enabler, from_dir, adjacency_rules)?;
+        for &tile in &removed_tiles {
+            self.probability_dict.remove(tile);
+        }
+        let events = TileRemovalEvent::from_list_of_removed_tiles(removed_tiles, self.loc);
+        return Some(events);
+    }
+
+    pub fn render(&self, patterns: &Vec<Pattern>, tile_size: usize) -> Pattern {
+        let allowed_patterns: Vec<(TileId, Pattern)> =
             self.domain.filter_allowed_enumerate(patterns).collect();
         if allowed_patterns.len() == 1 {
             return allowed_patterns[0].1.to_owned();
@@ -86,13 +113,19 @@ impl Cell {
             })
             .iter()
             .map(|weighted_pix| {
-                let mut fin_pix = weighted_pix.map(|channel| {
-                    (channel / self.probability_dict.total_count) as u8
-                });
+                let mut fin_pix =
+                    weighted_pix.map(|channel| (channel / self.probability_dict.total_count) as u8);
                 fin_pix[3] = 255;
                 fin_pix
             })
             .collect();
+    }
+
+    fn get_entropy_entry(&self) -> EntropyEntry {
+        return EntropyEntry {
+            entropy: self.probability_dict.entropy(),
+            loc: self.loc,
+        };
     }
 }
 
@@ -101,72 +134,123 @@ pub struct Model {
     entropy_heap: BinaryHeap<EntropyEntry>,
     adjacency_rules: AdjacencyRules,
     board: Board,
-    tile_frequencies: IdMap<usize>,
-    dims: UVec2,
+    // tile_frequencies: IdMap<usize>,
+    // dims: UVec2,
     wave: Vec<TileRemovalEvent>,
-    remaining_uncollapsed: usize,
-    tile_size: usize,
+    pub remaining_uncollapsed: usize,
+    // tile_size: usize,
 }
 
 impl Model {
     pub fn new(adjacency_rules: AdjacencyRules, tile_frequencies: Vec<usize>, dims: UVec2) -> Self {
-        let len = tile_frequencies.len();
-
         let num_cells = Grid(dims).area();
 
         // TODO: consider just initializing these in  cell init
         // for cleanliness
         let probability_dict = ProbabilityDict::new(&tile_frequencies);
-        let enabler_dict = EnablerDict::build(&adjacency_rules);
+        let mut entropy_heap = BinaryHeap::new();
+        let enabler_dict = EnablerDict::new(&adjacency_rules);
 
         let grid = dbg!(Grid(dims));
         let mut vals = Vec::with_capacity(num_cells as usize);
         for loc in grid.iter_locs() {
-            let cell = Cell::new(probability_dict.clone(), enabler_dict.with_loc(loc), loc);
+            let cell = Cell::new(probability_dict.clone(), enabler_dict.clone(), loc);
+            entropy_heap.push(cell.get_entropy_entry());
             vals.push(cell);
         }
         let board = Board { grid, vals };
         return Self {
             adjacency_rules,
-            tile_frequencies,
+            // tile_frequencies,
             board,
-            dims,
+            // dims,
+            entropy_heap,
             remaining_uncollapsed: Grid(dims).area() as usize,
             ..Default::default()
         };
     }
 
-    pub fn get_cell_mut(&mut self, loc: UVec2) -> &mut Cell {
-        return &mut self.board[loc];
+    pub fn get_cell_mut(&mut self, loc: UVec2) -> Option<&mut Cell> {
+        return self.board.get_cell_mut(loc.as_ivec2());
     }
 
-    pub fn get_cell(&self, loc: UVec2) -> &Cell {
-        return &self.board[loc];
+    pub fn get_cell(&self, loc: UVec2) -> Option<&Cell> {
+        return self.board.get_cell(loc.as_ivec2());
     }
 
     pub fn get_cell_to_collapse(&mut self) -> Option<UVec2> {
-        // while let Some(entry) = self.entropy_heap.pop() {
-        //     let cell = &self.board[entry.loc];
-        //     if !cell.collapsed {
-        //         return entry.loc;
-        //     }
-        // }
+        if self.remaining_uncollapsed == 0 {
+            return None;
+        }
+        while let Some(entry) = self.entropy_heap.pop() {
+            let cell = self
+                .get_cell(entry.loc)
+                .expect("entropy heap entries should all be inbounds");
+            if !cell.collapsed() {
+                return Some(cell.loc);
+            }
+        }
 
-        return self
-            .iter_cells()
-            .find_map(|c| if !c.collapsed { Some(c.loc) } else { None })
+        // return self
+        // .iter_cells()
+        // .find_map(|c| if !c.collapsed { Some(c.loc) } else { None });
 
-        // unreachable!("Entropy Heap should never be empty");
+        unreachable!("Entropy Heap should never be empty");
     }
 
     pub fn collapse_cell(&mut self) {
-        match self.get_cell_to_collapse() {
-            Some(loc) => {
-                let tile_removed_events = self.get_cell_mut(loc).collapse();
-                self.wave = tile_removed_events;
-                self.remaining_uncollapsed -= 1;
+        if let Some(loc) = self.get_cell_to_collapse() {
+            let tile_removed_events = {
+                let cell = &mut self
+                    .get_cell_mut(loc)
+                    .expect("entropy heap entries should all be inbounds");
+                cell.collapse()
+            };
+
+            self.wave = tile_removed_events;
+            self.remaining_uncollapsed -= 1;
+            log::info!(
+                "Collapsed cell {:?}. Removed {}/{} tile options",
+                loc,
+                self.wave.len(),
+                self.adjacency_rules.len()
+            );
+        }
+    }
+
+    pub fn propogate(&mut self) {
+        match self.wave.pop() {
+            Some(event) => {
+                assert!(self.board.inbounds(event.cell_loc.as_ivec2()));
+
+                let adjacent_tile_locs = self.board.cardinal_neighbors(event.cell_loc);
+                for (dir, adjacent_tile_loc) in adjacent_tile_locs {
+                    if !self.board.inbounds(adjacent_tile_loc) {
+                        continue;
+                    }
+                    log::info!(
+                        "{:?} -> {:?} -> {:?}",
+                        event.cell_loc,
+                        dir,
+                        adjacent_tile_loc
+                    );
+                    let adj_cell = self
+                        .board
+                        .get_cell_mut(adjacent_tile_loc)
+                        .expect("adjacent tile is inbounds");
+                    if let Some(tile_removed_events) =
+                        adj_cell.remove_enabler(event.tile_id, dir, &self.adjacency_rules)
+                    {
+                        log::info!("removed {} options", tile_removed_events.len());
+                        for event in tile_removed_events {
+                            self.wave.push(event);
+                        }
+                    }
+                    let entropy_entry = adj_cell.get_entropy_entry();
+                    self.entropy_heap.push(entropy_entry);
+                }
             }
-            None => ()
+            None => unreachable!("If wave was empty we should have collapsed a cell instead"),
         }
     }
 
@@ -177,10 +261,11 @@ impl Model {
         }
         // stack empty -> need to collapse a tile
         if self.wave.is_empty() {
+            log::info!("Collapsing");
             self.collapse_cell();
         } else {
-            // self.propogate();
-            return;
+            log::info!("Propogating");
+            self.propogate();
         }
     }
 
@@ -202,20 +287,49 @@ impl Board {
     fn index_grid(&self, loc: UVec2) -> usize {
         return (loc.y * self.grid.x + loc.x) as usize;
     }
+    pub fn inbounds(&self, loc: IVec2) -> bool {
+        return loc.cmpge(IVec2::ZERO).all() && loc.cmplt(self.grid.as_ivec2()).all();
+    }
+
+    pub fn cardinal_neighbors(&self, loc: UVec2) -> [(CardinalDirs, IVec2); 4] {
+        let loc = loc.as_ivec2();
+        let neighbors = [
+            CardinalDirs::Up,
+            CardinalDirs::Right,
+            CardinalDirs::Down,
+            CardinalDirs::Left,
+        ]
+        .map(|dir| (dir, dir + loc));
+        return neighbors;
+    }
+
+    pub fn get_cell(&self, loc: IVec2) -> Option<&Cell> {
+        if !self.inbounds(loc) {
+            return None;
+        }
+        return Some(&self[loc]);
+    }
+
+    pub fn get_cell_mut(&mut self, loc: IVec2) -> Option<&mut Cell> {
+        if !self.inbounds(loc) {
+            return None;
+        }
+        return Some(&mut self[loc]);
+    }
 }
 
-impl Index<UVec2> for Board {
+impl Index<IVec2> for Board {
     type Output = Cell;
 
-    fn index(&self, index: UVec2) -> &Self::Output {
-        let i = self.index_grid(index);
+    fn index(&self, index: IVec2) -> &Self::Output {
+        let i = self.index_grid(index.as_uvec2());
         return &self.vals[i];
     }
 }
 
-impl IndexMut<UVec2> for Board {
-    fn index_mut(&mut self, index: UVec2) -> &mut Self::Output {
-        let i = self.index_grid(index);
+impl IndexMut<IVec2> for Board {
+    fn index_mut(&mut self, index: IVec2) -> &mut Self::Output {
+        let i = self.index_grid(index.as_uvec2());
         return &mut self.vals[i];
     }
 }
@@ -280,7 +394,7 @@ impl ProbabilityDict {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct EntropyEntry {
     entropy: f32,
     loc: UVec2,
@@ -310,5 +424,79 @@ impl Ord for EntropyEntry {
             Ordering::Equal => self.loc.to_array().cmp(&other.loc.to_array()),
             lt_or_gt => lt_or_gt,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TileRemovalEvent {
+    pub tile_id: usize,
+    pub cell_loc: UVec2,
+}
+
+impl TileRemovalEvent {
+    pub fn new(tile_id: TileId, cell_loc: UVec2) -> Self {
+        return Self { tile_id, cell_loc };
+    }
+    pub fn from_list_of_removed_tiles(removed_tiles: Vec<TileId>, loc: UVec2) -> Vec<Self> {
+        return removed_tiles
+            .iter()
+            .map(|&removed_tile_id| Self::new(removed_tile_id, loc))
+            .collect();
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        simple_patterns::{construct_simple_patterns, CHARS},
+        Callback,
+        CompletionBehavior::StopWhenCompleted,
+    };
+
+    use super::*;
+
+    fn all_adjacency_rules_satisfied(model: &Model) {
+        for cell_loc in model.board.grid.iter_locs() {
+            let cell = model.get_cell(cell_loc).unwrap();
+            for (dir, adjacent_cell_loc) in model.board.cardinal_neighbors(cell_loc) {
+                // if adjacent_cell_loc inbounds (adj_cell exists)
+                if let Some(adj_cell) = model.board.get_cell(adjacent_cell_loc) {
+                    let mut cell_domain_in_dir: Vec<usize> = cell
+                        .domain
+                        .allowed_iter()
+                        .flat_map(|tile_id| model.adjacency_rules.enabled_by(tile_id, dir))
+                        .collect();
+                    cell_domain_in_dir.sort();
+                    cell_domain_in_dir.dedup();
+                    for adj_allowed_tile_id in adj_cell.domain.allowed_iter() {
+                        assert!(cell_domain_in_dir.contains(&adj_allowed_tile_id), "cell at {cell_loc:?} with domain {:?} in direction {dir:?} has neighbor at {adjacent_cell_loc} with possible tile {} that should not be allowed", cell_domain_in_dir.iter().map(|&tile_id| CHARS[tile_id]).collect::<Vec<&str>>(), CHARS[adj_allowed_tile_id]);
+                    }
+                }
+            }
+        }
+    }
+
+    struct AdjacencyRulesSatisfiedCallback;
+
+    impl Callback for AdjacencyRulesSatisfiedCallback {
+        fn new(_wfc: &crate::Wfc) -> Self
+        where
+            Self: Sized,
+        {
+            return Self;
+        }
+        fn run(&mut self, model: &Model) {
+            // Only if not propogating (i.e. not all domains updated yet)
+            if model.wave.len() == 0 {
+                all_adjacency_rules_satisfied(model);
+            }
+        }
+    }
+
+    #[test]
+    fn adjacency_rules_fulfilled_always() {
+        construct_simple_patterns()
+            .with_output_dimensions(40, 40)
+            .run_with_callback::<AdjacencyRulesSatisfiedCallback>(StopWhenCompleted);
     }
 }

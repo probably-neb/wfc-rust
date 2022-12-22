@@ -1,6 +1,6 @@
 use glam::UVec2;
-use image::{Rgba, RgbaImage};
-use std::collections::HashMap;
+use image::{Rgba, RgbaImage, GenericImageView};
+use std::{collections::HashMap, vec::Vec};
 
 use crate::{adjacency_rules::{
     AdjacencyRules,
@@ -10,8 +10,8 @@ use crate::{adjacency_rules::{
 /// The actual pixel data of the tile_size x tile_size rectangle (PatternRect)
 /// corresponding to a tile in the source image
 pub type RgbaPattern = Vec<Rgba<u8>>;
-pub type RgbaArrPattern = Vec<[u8; 4]>;
-pub type Pattern = Vec<u8>;
+pub type Pattern = Vec<[u8; 4]>;
+pub type U8Pattern = Vec<u8>;
 type LocIdHMap = HashMap<UVec2, usize>;
 type PatternIdHMap = HashMap<RgbaPattern, usize>;
 // type IdPatternHMap = HashMap<usize, Pattern>;
@@ -31,9 +31,10 @@ pub struct PreProcessor {
 }
 
 impl PreProcessor {
-    pub fn new(image: RgbaImage, tile_size: usize) -> Self {
+    pub fn new(image: &RgbaImage, tile_size: usize) -> Self {
         let dims: UVec2 = image.dimensions().into();
-        return Self { image, tile_size, dims,..Default::default()};
+        image.as_flat_samples();
+        return Self { image: image.clone(), tile_size, dims,..Default::default()};
     }
     pub fn num_tiles(&self) -> usize {
         return self.tiles.len();
@@ -56,15 +57,21 @@ impl PreProcessor {
         return locs;
     }
 
-    pub fn rgba_arr_pattern_at(&self, loc: UVec2) -> RgbaArrPattern {
-        let mut pixels = Vec::with_capacity(self.tile_size * self.tile_size);
-        let (min_x, min_y) = loc.into();
-        let (max_x, max_y) = (loc + self.tile_size as u32).into();
-        for x in min_x..max_x {
-            for y in min_y..max_y {
-                pixels.push(self.image[(x, y)].0);
-            }
-        }
+    fn image_at(&self, loc: UVec2) -> image::SubImage<&image::ImageBuffer<Rgba<u8>, Vec<u8>>> {
+        let ts_u32 = self.tile_size as u32;
+        return self.image.view(loc.x, loc.y, ts_u32, ts_u32);
+    }
+
+    pub fn rgba_arr_pattern_at(&self, loc: UVec2) -> Pattern {
+        // let mut pixels = Vec::with_capacity(self.tile_size * self.tile_size);
+        // let (min_x, min_y) = loc.into();
+        // let (max_x, max_y) = (loc + self.tile_size as u32).into();
+        // for x in min_x..max_x {
+        //     for y in min_y..max_y {
+        //         pixels.push(self.image[(x, y)].0);
+        //     }
+        // }
+        let pixels = self.image_at(loc).pixels().map(|(_,_,rgba)| rgba.0).collect();
         return pixels;
     }
 
@@ -80,7 +87,7 @@ impl PreProcessor {
         return pixels;
     }
 
-    pub fn pattern_at(&self, loc: UVec2) -> Pattern {
+    pub fn pattern_at(&self, loc: UVec2) -> U8Pattern {
         let mut pixels = Vec::with_capacity(self.tile_size * self.tile_size * 4);
         let (min_x, min_y) = loc.into();
         let (max_x, max_y) = (loc + self.tile_size as u32).into();
@@ -109,11 +116,9 @@ impl PreProcessor {
             if new_tile {
                 self.pattern_ids.insert(pattern.clone(), num_unique_tiles);
                 num_unique_tiles += 1;
-            }
-            if !new_tile {
-                tile_frequencies[self.pattern_ids[&pattern]] += 1;
-            } else {
                 tile_frequencies.push(1);
+            } else {
+                tile_frequencies[self.pattern_ids[&pattern]] += 1;
             }
             let id = self.pattern_ids[&pattern];
             self.tile_loc_map.insert(loc, id);
@@ -123,18 +128,18 @@ impl PreProcessor {
             // add the adjacency rules in these directions if not on an edge
             let on_left_edge = loc.x == 0;
             let on_bottom_edge = loc.y == 0;
+            // let on_right_edge = loc.x == self.dims.x;
+            // let on_top_edge = loc.y == self.dims.x;
             let tsize = self.tile_size as u32;
             if !on_left_edge {
                 let left_loc = loc - UVec2 { x: tsize, y: 0 };
                 let left_id = self.tile_loc_map[&left_loc];
-                // and reverse
-                adjacency_rules.allow_bi(id, left_id, Left);
+                adjacency_rules.allow(id, left_id, crate::adjacency_rules::CardinalDirs::Left);
             }
             if !on_bottom_edge {
                 let bottom_loc = loc - UVec2 { x: 0, y: tsize };
                 let bottom_id = self.tile_loc_map[&bottom_loc];
-                // and reverse
-                adjacency_rules.allow_bi(id, bottom_id, Down);
+                adjacency_rules.allow(id, bottom_id, crate::adjacency_rules::CardinalDirs::Up);
             }
         }
 
@@ -155,7 +160,7 @@ impl PreProcessor {
 pub struct WfcData {
     pub tile_frequencies: IdMap<usize>,
     pub adjacency_rules: AdjacencyRules,
-    pub patterns: IdMap<RgbaArrPattern>,
+    pub patterns: IdMap<Pattern>,
 }
 
 #[cfg(test)]
@@ -197,11 +202,7 @@ mod test {
     fn checker_proc() -> PreProcessor {
         let image = make_checkerboard(UVec2 { x: 16, y: 16 });
         let tile_size = 4;
-        return PreProcessor {
-            image,
-            tile_size,
-            ..Default::default()
-        };
+        return PreProcessor::new(&image,tile_size);
     }
 
     #[test]
