@@ -399,6 +399,8 @@ pub mod simple_patterns {
     use CardinalDirs::*;
     pub const CHARS: [&str; 5] = ["' '", "┓", "┛", "┏", "┗"];
 
+    const PRINT_CREATION: bool = false;
+
     fn allow_all(
         aaa: [usize; 2],
         bbb: [usize; 2],
@@ -408,25 +410,27 @@ pub mod simple_patterns {
         for a in aaa {
             for b in bbb {
                 adjacency_rules.allow(a, b, dir);
-                // let ac = CHARS[a];
-                // let bc = CHARS[b];
-                // println!("Allowing:");
-                // match dir {
-                //     Up => {
-                //         println!("{}", bc);
-                //         println!("{}", ac);
-                //     }
-                //     Down => {
-                //         println!("{}", ac);
-                //         println!("{}", bc);
-                //     }
-                //     Left => {
-                //         println!("{}{}", bc, ac)
-                //     }
-                //     Right => {
-                //         println!("{}{}", ac, bc)
-                //     }
-                // }
+                if PRINT_CREATION {
+                    let ac = CHARS[a];
+                    let bc = CHARS[b];
+                    println!("Allowing:");
+                    match dir {
+                        Up => {
+                            println!("{}", bc);
+                            println!("{}", ac);
+                        }
+                        Down => {
+                            println!("{}", ac);
+                            println!("{}", bc);
+                        }
+                        Left => {
+                            println!("{}{}", bc, ac)
+                        }
+                        Right => {
+                            println!("{}{}", ac, bc)
+                        }
+                    }
+                }
             }
         }
     }

@@ -63,40 +63,17 @@ impl PreProcessor {
     }
 
     pub fn rgba_arr_pattern_at(&self, loc: UVec2) -> Pattern {
-        // let mut pixels = Vec::with_capacity(self.tile_size * self.tile_size);
-        // let (min_x, min_y) = loc.into();
-        // let (max_x, max_y) = (loc + self.tile_size as u32).into();
-        // for x in min_x..max_x {
-        //     for y in min_y..max_y {
-        //         pixels.push(self.image[(x, y)].0);
-        //     }
-        // }
         let pixels = self.image_at(loc).pixels().map(|(_,_,rgba)| rgba.0).collect();
         return pixels;
     }
 
     pub fn rgba_pattern_at(&self, loc: UVec2) -> RgbaPattern {
-        let mut pixels = Vec::with_capacity(self.tile_size * self.tile_size);
-        let (min_x, min_y) = loc.into();
-        let (max_x, max_y) = (loc + self.tile_size as u32).into();
-        for x in min_x..max_x {
-            for y in min_y..max_y {
-                pixels.push(self.image[(x, y)]);
-            }
-        }
+        let pixels = self.image_at(loc).pixels().map(|(_,_,rgba)| rgba).collect();
         return pixels;
     }
 
     pub fn pattern_at(&self, loc: UVec2) -> U8Pattern {
-        let mut pixels = Vec::with_capacity(self.tile_size * self.tile_size * 4);
-        let (min_x, min_y) = loc.into();
-        let (max_x, max_y) = (loc + self.tile_size as u32).into();
-        for x in min_x..max_x {
-            for y in min_y..max_y {
-                let mut rgba: Vec<u8> = self.image[(x,y)].0.to_owned().to_vec();
-                pixels.append(&mut rgba);
-            }
-        }
+        let pixels = self.image_at(loc).pixels().flat_map(|(_,_,rgba)| rgba.0).collect();
         return pixels;
     }
 
@@ -240,7 +217,6 @@ mod test {
             println!("{}", proc.image[(i * 4, 3 * 4)][0] / 255);
         }
         proc.image.save("./checker.png").unwrap();
-        // println!("{:?}", proc.image.pixels().step_by(4).map(|p| p[0]/255).collect::<Vec<u8>>());
         println!("{adj_rules:?}");
         assert_eq!(adj_rules.len(), 2);
         assert!(adj_rules.allowed_in_all_dirs(0, 1));

@@ -33,9 +33,7 @@ impl AdjacencyRules {
     }
 
     fn allow_one_way(&mut self, from: usize, to: usize, dir: CardinalDirs) {
-        // self.try_add_new(from_);
         self.map.entry(from).or_insert_with(Default::default)[dir].insert(to);
-        // self.map.get_mut(&from_).expect("from_ already in map")[dir].insert(to_);
     }
 
     pub fn is_allowed(&self, from: usize, to: usize, dir: CardinalDirs) -> bool {
