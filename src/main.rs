@@ -1,10 +1,10 @@
 use wfc_rust::{Wfc, simple_patterns::construct_simple_patterns, CompletionBehavior::*};
 
 fn main() {
-    // run_simple_patterns();
+    run_simple_patterns();
     // run_celtic();
     // render_celtic();
-    render_celtic_patterns();
+    // render_celtic_patterns();
 }
 
 #[allow(unused)]
