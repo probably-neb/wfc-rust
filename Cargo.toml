@@ -15,6 +15,7 @@ derive_more = {version = "0.99.17", default-features=false, features = [
              "index",
              "index_mut",
              "from",
+             "is_variant",
 ]}
-log = { version = "0.4.17", features = ["kv_unstable"] }
+log = "0.4.17"
 simplelog = "0.12.0"
