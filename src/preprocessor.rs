@@ -1,11 +1,14 @@
 use glam::UVec2;
-use image::{Rgba, RgbaImage, GenericImageView};
+use image::{GenericImageView, Rgba, RgbaImage};
 use std::{collections::HashMap, vec::Vec};
 
-use crate::{adjacency_rules::{
-    AdjacencyRules,
-    CardinalDirs::{Down, Left},
-}, tile::IdMap};
+use crate::{
+    adjacency_rules::{
+        AdjacencyRules,
+        CardinalDirs::{Down, Left},
+    },
+    tile::IdMap,
+};
 
 /// The actual pixel data of the tile_size x tile_size rectangle (PatternRect)
 /// corresponding to a tile in the source image
@@ -28,13 +31,19 @@ pub struct PreProcessor {
     /// in the source image corresponding to each unique tile
     pub tiles: IdMap<UVec2>,
     pattern_ids: PatternIdHMap,
+    config: ProcessorConfig,
 }
 
 impl PreProcessor {
-    pub fn new(image: &RgbaImage, tile_size: usize) -> Self {
+    pub fn new(image: &RgbaImage, tile_size: usize, config: ProcessorConfig) -> Self {
         let dims: UVec2 = image.dimensions().into();
-        image.as_flat_samples();
-        return Self { image: image.clone(), tile_size, dims,..Default::default()};
+        return Self {
+            image: image.clone(),
+            tile_size,
+            dims,
+            config,
+            ..Default::default()
+        };
     }
     pub fn num_tiles(&self) -> usize {
         return self.tiles.len();
@@ -63,17 +72,29 @@ impl PreProcessor {
     }
 
     pub fn rgba_arr_pattern_at(&self, loc: UVec2) -> Pattern {
-        let pixels = self.image_at(loc).pixels().map(|(_,_,rgba)| rgba.0).collect();
+        let pixels = self
+            .image_at(loc)
+            .pixels()
+            .map(|(_, _, rgba)| rgba.0)
+            .collect();
         return pixels;
     }
 
     pub fn rgba_pattern_at(&self, loc: UVec2) -> RgbaPattern {
-        let pixels = self.image_at(loc).pixels().map(|(_,_,rgba)| rgba).collect();
+        let pixels = self
+            .image_at(loc)
+            .pixels()
+            .map(|(_, _, rgba)| rgba)
+            .collect();
         return pixels;
     }
 
     pub fn pattern_at(&self, loc: UVec2) -> U8Pattern {
-        let pixels = self.image_at(loc).pixels().flat_map(|(_,_,rgba)| rgba.0).collect();
+        let pixels = self
+            .image_at(loc)
+            .pixels()
+            .flat_map(|(_, _, rgba)| rgba.0)
+            .collect();
         return pixels;
     }
 
@@ -101,12 +122,29 @@ impl PreProcessor {
             self.tile_loc_map.insert(loc, id);
 
             // construct adjacency rules
+            if self.config.wrap {
+                let max = self.dims - (self.dims % self.tile_size as u32) - UVec2::ONE;
+                let on_right_edge = loc.x == max.x;
+                let on_top_edge = loc.y == max.y;
+                if on_right_edge {
+                    let left_loc = UVec2 { x: 0, y: loc.y };
+                    let left_id = self.tile_loc_map[&left_loc];
+                    adjacency_rules.allow(id, left_id, crate::adjacency_rules::CardinalDirs::Right);
+                }
+                if on_top_edge {
+                    let bottom_loc = loc - UVec2 { x: loc.x, y: 0 };
+                    let bottom_id = self.tile_loc_map[&bottom_loc];
+                    adjacency_rules.allow(
+                        id,
+                        bottom_id,
+                        crate::adjacency_rules::CardinalDirs::Down,
+                    );
+                }
+            }
             // locs are in column major order so left (<) and below (v) tiles are already extracted
             // add the adjacency rules in these directions if not on an edge
             let on_left_edge = loc.x == 0;
             let on_bottom_edge = loc.y == 0;
-            // let on_right_edge = loc.x == self.dims.x;
-            // let on_top_edge = loc.y == self.dims.x;
             let tsize = self.tile_size as u32;
             if !on_left_edge {
                 let left_loc = loc - UVec2 { x: tsize, y: 0 };
@@ -129,8 +167,16 @@ impl PreProcessor {
         assert!(!self.pattern_ids.is_empty());
         assert!(!self.tiles.is_empty());
 
-        let patterns = self.tiles.iter().map(|&loc| self.rgba_arr_pattern_at(loc)).collect();
-        return WfcData { tile_frequencies, adjacency_rules, patterns };
+        let patterns = self
+            .tiles
+            .iter()
+            .map(|&loc| self.rgba_arr_pattern_at(loc))
+            .collect();
+        return WfcData {
+            tile_frequencies,
+            adjacency_rules,
+            patterns,
+        };
     }
 }
 
@@ -138,6 +184,18 @@ pub struct WfcData {
     pub tile_frequencies: IdMap<usize>,
     pub adjacency_rules: AdjacencyRules,
     pub patterns: IdMap<Pattern>,
+}
+
+
+#[derive(Debug, Clone)]
+pub struct ProcessorConfig {
+    pub wrap: bool,
+}
+
+impl Default for ProcessorConfig {
+    fn default() -> Self {
+        Self { wrap: false }
+    }
 }
 
 #[cfg(test)]
@@ -179,13 +237,17 @@ mod test {
     fn checker_proc() -> PreProcessor {
         let image = make_checkerboard(UVec2 { x: 16, y: 16 });
         let tile_size = 4;
-        return PreProcessor::new(&image,tile_size);
+        return PreProcessor::new(&image, tile_size, ProcessorConfig::default());
     }
 
     #[test]
     fn extract_tiles() {
         let mut proc = checker_proc();
-        let WfcData { tile_frequencies, adjacency_rules: _, patterns: _ } = proc.process();
+        let WfcData {
+            tile_frequencies,
+            adjacency_rules: _,
+            patterns: _,
+        } = proc.process();
         let pattern_ids = proc.pattern_ids;
         let tiles = proc.tile_loc_map;
         // tile ids

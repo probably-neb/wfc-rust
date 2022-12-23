@@ -22,6 +22,7 @@ const PIXEL_SCALE_DEFAULT: u32 = 2;
 pub struct Wfc {
     creation_mode: CreationMode,
     image: Option<RgbaImage>,
+    processor_config: Option<ProcessorConfig>,
     pub wfc_data: Option<WfcData>,
     output_dims: Option<UVec2>,
     // TODO: remove importance of order: option 1: everything including (pixel scale and tile_size) are options, set with defaults when ran
@@ -45,6 +46,7 @@ impl Wfc {
         let mut this = Self::setup();
         this.image = Some(image);
         this.creation_mode = CreationMode::FromImage;
+        this.processor_config = Some(ProcessorConfig::default());
         return this;
     }
     fn load_image<P>(path: P) -> RgbaImage
@@ -127,6 +129,11 @@ impl Wfc {
         .unwrap();
         return self;
     }
+    // TODO: make PatternsBuilder that has FromImage and FromPatterns variants?
+    pub fn wrap(mut self) -> Self {
+        self.processor_config.as_mut().unwrap().wrap = true;
+        return self;
+    }
 
     pub fn with_pixel_scale(mut self, pixel_scale: u32) -> Self {
         self.pixel_scale = pixel_scale;
@@ -145,6 +152,14 @@ impl Wfc {
         assert!(self.creation_mode.is_from_image());
         let mut processor =
             PreProcessor::new(self.image.as_ref().expect("Image is set"), self.tile_size);
+        let mut processor = PreProcessor::new(
+            self.image.as_ref().expect("Image is set"),
+            self.tile_size,
+            self.processor_config
+                .as_ref()
+                .expect("ProcessorConfig is set")
+                .clone(),
+        );
         self.wfc_data = Some(processor.process());
     }
 

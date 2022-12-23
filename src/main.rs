@@ -13,6 +13,7 @@ fn run_celtic() {
         .with_tile_size(64)
         .with_output_dimensions(256, 256)
         .log()
+        .wrap()
         .run_render(KeepRunning);
 }
 
@@ -24,7 +25,7 @@ fn render_celtic_patterns() {
         .decode()
         .unwrap()
         .to_rgba8();
-    let mut processor = wfc_rust::preprocessor::PreProcessor::new(&image, 64);
+    let mut processor = wfc_rust::preprocessor::PreProcessor::new(&image, 64, wfc_rust::preprocessor::ProcessorConfig::default());
     let data = processor.process();
     for (id,&loc) in processor.tiles.iter().enumerate() {
         win.update_grid_cell(loc / 64, data.patterns[id].clone());
