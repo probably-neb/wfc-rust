@@ -1,5 +1,5 @@
 use std::{
-    cmp::Ordering,
+    cmp::{Ordering, Reverse},
     collections::BinaryHeap,
     iter::{repeat, zip},
     ops::{Index, IndexMut},
@@ -131,7 +131,7 @@ impl Cell {
 
 #[derive(Debug, Default)]
 pub struct Model {
-    entropy_heap: BinaryHeap<EntropyEntry>,
+    entropy_heap: MinEntropyHeap,
     adjacency_rules: AdjacencyRules,
     board: Board,
     // tile_frequencies: IdMap<usize>,
@@ -148,10 +148,10 @@ impl Model {
         // TODO: consider just initializing these in  cell init
         // for cleanliness
         let probability_dict = ProbabilityDict::new(&tile_frequencies);
-        let mut entropy_heap = BinaryHeap::new();
+        let mut entropy_heap = MinEntropyHeap::new();
         let enabler_dict = EnablerDict::new(&adjacency_rules);
 
-        let grid = dbg!(Grid(dims));
+        let grid = Grid(dims);
         let mut vals = Vec::with_capacity(num_cells as usize);
         for loc in grid.iter_locs() {
             let cell = Cell::new(probability_dict.clone(), enabler_dict.clone(), loc);
@@ -394,6 +394,23 @@ impl ProbabilityDict {
     }
 }
 
+#[derive(Default, Debug)]
+pub struct MinEntropyHeap(BinaryHeap<Reverse<EntropyEntry>>);
+
+impl MinEntropyHeap {
+    fn push(&mut self, e: EntropyEntry) {
+        self.0.push(Reverse(e));
+    }
+    fn pop(&mut self) -> Option<EntropyEntry> {
+        // unwrap from reverse
+        // TODO: just return loc?
+        self.0.pop().map(|Reverse(entry)| entry)
+    }
+    pub fn new() -> Self {
+        return Self(BinaryHeap::new());
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct EntropyEntry {
     entropy: f32,
@@ -487,7 +504,7 @@ mod test {
         }
         fn run(&mut self, model: &Model) {
             // Only if not propogating (i.e. not all domains updated yet)
-            if model.wave.len() == 0 {
+            if model.wave.is_empty() {
                 all_adjacency_rules_satisfied(model);
             }
         }
@@ -498,5 +515,27 @@ mod test {
         construct_simple_patterns()
             .with_output_dimensions(40, 40)
             .run_with_callback::<AdjacencyRulesSatisfiedCallback>(StopWhenCompleted);
+    }
+
+    #[test]
+    fn entropy_calculations() {
+        let tile_frequencies = [1,2,3,4,5];
+        let calculated_entropy: f32 = 2.149;
+        let mut prob = ProbabilityDict::new(&tile_frequencies.to_vec());
+        assert!((calculated_entropy - prob.entropy()) <= f32::EPSILON);
+        prob.remove(4);
+        assert!(prob.total_count == 10);
+        let calculated_entropy: f32 = 1.621;
+        assert!((calculated_entropy - prob.entropy()) <= f32::EPSILON);
+    }
+
+    #[test]
+    fn entropy_heap_is_min_heap() {
+        let mut heap = MinEntropyHeap::new();
+        let min_entry = EntropyEntry { entropy: 0.1, loc: UVec2::X };
+        let max_entry = EntropyEntry { entropy: 0.2, loc: UVec2::Y };
+        heap.push(min_entry);
+        heap.push(max_entry);
+        assert!(heap.pop() == Some(min_entry));
     }
 }
