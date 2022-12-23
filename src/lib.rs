@@ -213,11 +213,14 @@ struct RenderCallback {
 }
 
 impl RenderCallback {
+    fn render_cell(&mut self, cell: &wfc::Cell) {
+        self.window
+            .update_grid_cell(cell.loc, cell.render(&self.patterns, self.tile_size));
+    }
     fn render(&mut self, model: &Model) {
-        for cell in model.iter_cells() {
+        for &cell_loc in &model.updated_cells {
             // TODO: move cell render here
-            self.window
-                .update_grid_cell(cell.loc, cell.render(&self.patterns, self.tile_size));
+            self.render_cell(model.get_cell(cell_loc).unwrap());
         }
         self.window.render();
     }

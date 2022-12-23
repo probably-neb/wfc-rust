@@ -137,7 +137,9 @@ pub struct Model {
     // tile_frequencies: IdMap<usize>,
     // dims: UVec2,
     wave: Vec<TileRemovalEvent>,
-    pub remaining_uncollapsed: usize,
+    pub remaining_uncollapsed: u32,
+    pub updated_cells: Vec<UVec2>,
+    first_step: bool,
     // tile_size: usize,
 }
 
@@ -150,6 +152,7 @@ impl Model {
         let probability_dict = ProbabilityDict::new(&tile_frequencies);
         let mut entropy_heap = MinEntropyHeap::new();
         let enabler_dict = EnablerDict::new(&adjacency_rules);
+        let mut updated_cells = Vec::new();
 
         let grid = Grid(dims);
         let mut vals = Vec::with_capacity(num_cells as usize);
@@ -157,6 +160,7 @@ impl Model {
             let cell = Cell::new(probability_dict.clone(), enabler_dict.clone(), loc);
             entropy_heap.push(cell.get_entropy_entry());
             vals.push(cell);
+            updated_cells.push(loc);
         }
         let board = Board { grid, vals };
         return Self {
@@ -165,7 +169,9 @@ impl Model {
             board,
             // dims,
             entropy_heap,
-            remaining_uncollapsed: Grid(dims).area() as usize,
+            updated_cells,
+            first_step: true,
+            remaining_uncollapsed: Grid(dims).area(),
             ..Default::default()
         };
     }
@@ -209,6 +215,7 @@ impl Model {
 
             self.wave = tile_removed_events;
             self.remaining_uncollapsed -= 1;
+            self.updated_cells.push(loc);
             log::info!(
                 "Collapsed cell {:?}. Removed {}/{} tile options",
                 loc,
@@ -245,6 +252,7 @@ impl Model {
                         for event in tile_removed_events {
                             self.wave.push(event);
                         }
+                        self.updated_cells.push(adjacent_tile_loc.as_uvec2());
                     }
                     let entropy_entry = adj_cell.get_entropy_entry();
                     self.entropy_heap.push(entropy_entry);
@@ -255,6 +263,12 @@ impl Model {
     }
 
     pub fn step(&mut self) {
+        // clear updated cells unless this is the first step
+        if self.first_step {
+            self.first_step = false;
+        } else {
+            self.updated_cells.clear();
+        }
         // no tiles left to collapse -> done
         if self.remaining_uncollapsed == 0 {
             return;
