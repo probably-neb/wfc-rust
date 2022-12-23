@@ -186,6 +186,16 @@ pub struct WfcData {
     pub patterns: IdMap<Pattern>,
 }
 
+use std::fmt::Debug;
+impl Debug for WfcData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WfcData")
+            .field("tile_frequencies", &self.tile_frequencies)
+            .field("adjacency_rules", &self.adjacency_rules)
+            .field("patterns (len)", &self.patterns.len())
+            .finish()
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ProcessorConfig {

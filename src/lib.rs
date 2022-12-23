@@ -9,9 +9,9 @@ use derive_more::{Deref, DerefMut, From};
 use glam::UVec2;
 use image::{io::Reader as ImageReader, Rgba, RgbaImage};
 use pixels::Pixels;
-use preprocessor::{Pattern, PreProcessor, RgbaPattern, WfcData};
+use preprocessor::{Pattern, PreProcessor, ProcessorConfig, RgbaPattern, WfcData};
 use simplelog::*;
-use std::{fs::File, path::Path};
+use std::{fmt::Debug, fs::File, path::Path};
 use tile::IdMap;
 use wfc::Model;
 
@@ -29,6 +29,20 @@ pub struct Wfc {
     tile_size: usize,
     pixel_scale: u32,
     output_image: Option<RgbaImage>,
+
+impl Debug for Wfc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Wfc")
+            .field("creation_mode", &self.creation_mode)
+            // .field("image", &self.image)
+            .field("processor_config", &self.processor_config)
+            .field("wfc_data", &self.wfc_data)
+            .field("output_dims", &self.output_dims)
+            .field("tile_size", &self.tile_size)
+            .field("pixel_scale", &self.pixel_scale)
+            // .field("output_image", &self.output_image)
+            .finish()
+    }
 }
 
 // TODO: proc macro / derive macro to generate these builder functions and
@@ -150,8 +164,6 @@ impl Wfc {
     }
     pub fn process_image(&mut self) {
         assert!(self.creation_mode.is_from_image());
-        let mut processor =
-            PreProcessor::new(self.image.as_ref().expect("Image is set"), self.tile_size);
         let mut processor = PreProcessor::new(
             self.image.as_ref().expect("Image is set"),
             self.tile_size,
