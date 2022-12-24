@@ -1,8 +1,8 @@
 use wfc_rust::{Wfc, simple_patterns::construct_simple_patterns, CompletionBehavior::*};
 
 fn main() {
-    run_simple_patterns();
-    // run_celtic();
+    // run_simple_patterns();
+    run_celtic();
     // render_celtic();
     // render_celtic_patterns();
 }
@@ -10,10 +10,21 @@ fn main() {
 #[allow(unused)]
 fn run_celtic() {
      Wfc::new_from_image_path("./inputs/celtic.png")
-        .with_tile_size(64)
+        .with_tile_size(32)
         .with_output_dimensions(256, 256)
         .log()
-        .wrap()
+        .wang()
+        .wang_flip()
+        .run_render(KeepRunning);
+}
+
+#[allow(unused)]
+fn run_dual() {
+     Wfc::new_from_image_path("./inputs/dual.png")
+        .with_tile_size(32)
+        .with_output_dimensions(256, 256)
+        .log()
+        .wang()
         .run_render(KeepRunning);
 }
 
@@ -33,7 +44,6 @@ fn render_celtic_patterns() {
     loop {
         win.render();
     }
-
 }
 
 #[allow(unused)]

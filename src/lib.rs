@@ -149,6 +149,16 @@ impl Wfc {
         return self;
     }
 
+    pub fn wang(mut self) -> Self {
+        self.processor_config.as_mut().unwrap().wang = true;
+        return self;
+    }
+
+    pub fn wang_flip(mut self) -> Self {
+        self.processor_config.as_mut().unwrap().wang_flip = true;
+        return self;
+    }
+
     pub fn with_pixel_scale(mut self, pixel_scale: u32) -> Self {
         self.pixel_scale = pixel_scale;
         return self;

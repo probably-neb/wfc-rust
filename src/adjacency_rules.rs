@@ -34,6 +34,7 @@ impl AdjacencyRules {
 
     fn allow_one_way(&mut self, from: usize, to: usize, dir: CardinalDirs) {
         self.map.entry(from).or_insert_with(Default::default)[dir].insert(to);
+        log::info!("allowing {from} -> {dir:?} -> {to}");
     }
 
     pub fn is_allowed(&self, from: usize, to: usize, dir: CardinalDirs) -> bool {
@@ -41,7 +42,10 @@ impl AdjacencyRules {
     }
 
     pub fn enabled_by(&self, from: TileId, dir: CardinalDirs) -> Vec<TileId> {
-        return self.map[&from][dir].iter().copied().collect();
+        match self.map.get(&from) {
+            Some(allowed_adjacents) => allowed_adjacents[dir].iter().copied().collect(),
+            None => panic!("no tile entry for tile {from}")
+        }
     }
 
     fn enabled_by_count(&self, from: usize) -> [usize; 4] {

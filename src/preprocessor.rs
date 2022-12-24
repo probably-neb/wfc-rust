@@ -1,13 +1,16 @@
 use glam::UVec2;
-use image::{GenericImageView, Rgba, RgbaImage};
-use std::{collections::HashMap, vec::Vec};
+use image::{GenericImageView, ImageBuffer, Rgba, RgbaImage, SubImage};
+use std::{
+    collections::{HashMap, HashSet},
+    vec::Vec,
+};
 
 use crate::{
     adjacency_rules::{
         AdjacencyRules,
-        CardinalDirs::{Down, Left},
+        CardinalDirs::{self, Down, Left, Right, Up},
     },
-    tile::IdMap,
+    tile::{IdMap, TileId},
 };
 
 /// The actual pixel data of the tile_size x tile_size rectangle (PatternRect)
@@ -15,8 +18,10 @@ use crate::{
 pub type RgbaPattern = Vec<Rgba<u8>>;
 pub type Pattern = Vec<[u8; 4]>;
 pub type U8Pattern = Vec<u8>;
+type PatternSubImage<'a> = SubImage<&'a ImageBuffer<Rgba<u8>, Vec<u8>>>;
 type LocIdHMap = HashMap<UVec2, usize>;
 type PatternIdHMap = HashMap<RgbaPattern, usize>;
+type Edge = RgbaPattern;
 // type IdPatternHMap = HashMap<usize, Pattern>;
 
 #[derive(Debug, Default)]
@@ -27,11 +32,14 @@ pub struct PreProcessor {
     pub dims: UVec2,
     /// Map of loc to Tile Id. Mainly for debugging
     pub tile_loc_map: LocIdHMap,
-    /// the bottom left corner of the tile_size x tile_size pattern
+    /// the top left corner of the tile_size x tile_size pattern
     /// in the source image corresponding to each unique tile
     pub tiles: IdMap<UVec2>,
     pattern_ids: PatternIdHMap,
     config: ProcessorConfig,
+    num_unique_tiles: usize,
+    adjacency_rules: AdjacencyRules,
+    tile_frequencies: IdMap<usize>,
 }
 
 impl PreProcessor {
@@ -46,7 +54,7 @@ impl PreProcessor {
         };
     }
     pub fn num_tiles(&self) -> usize {
-        return self.tiles.len();
+        return self.num_unique_tiles;
     }
     pub fn tile_ids(&self) -> impl Iterator<Item = usize> {
         return 0..(self.num_tiles());
@@ -66,7 +74,13 @@ impl PreProcessor {
         return locs;
     }
 
-    fn image_at(&self, loc: UVec2) -> image::SubImage<&image::ImageBuffer<Rgba<u8>, Vec<u8>>> {
+    fn next_tile_id(&mut self) -> usize {
+        let id = self.num_unique_tiles;
+        self.num_unique_tiles += 1;
+        return id;
+    }
+
+    fn image_at(&self, loc: UVec2) -> SubImage<&ImageBuffer<Rgba<u8>, Vec<u8>>> {
         let ts_u32 = self.tile_size as u32;
         return self.image.view(loc.x, loc.y, ts_u32, ts_u32);
     }
@@ -98,28 +112,81 @@ impl PreProcessor {
         return pixels;
     }
 
-    pub fn process(&mut self) -> WfcData {
-        // incremented to assign each tile a unique id
-        let mut num_unique_tiles = 0;
-        // a map from tile pixels to it's tile id let mut tile_freqs: Vec<usize> = Vec::new();
-        let mut adjacency_rules = AdjacencyRules::new();
-        let mut tile_frequencies: IdMap<usize> = IdMap::new();
+    fn fill_tile_idmap(&mut self) {
+        // fill self.tiles
+        self.tiles = vec![UVec2::default(); self.num_tiles()];
+        for (&loc, &id) in &self.tile_loc_map {
+            self.tiles[id] = loc;
+        }
+    }
 
+    fn add_adjacency_rules_from_previously_parsed_tiles(&mut self, loc: UVec2, id: TileId) {
+        // locs are in column major order so left (<) and below (v) tiles are already extracted
+        // add the adjacency rules in these directions if not on an edge
+        let on_left_edge = loc.x == 0;
+        let on_bottom_edge = loc.y == 0;
+        let tsize = self.tile_size as u32;
+        if !on_left_edge {
+            let left_loc = loc - UVec2 { x: tsize, y: 0 };
+            let left_id = self.tile_loc_map[&left_loc];
+            self.adjacency_rules.allow(id, left_id, Left);
+        }
+        if !on_bottom_edge {
+            let bottom_loc = loc - UVec2 { x: 0, y: tsize };
+            let bottom_id = self.tile_loc_map[&bottom_loc];
+            self.adjacency_rules.allow(id, bottom_id, Up);
+        }
+    }
+
+    /// If pattern at loc has not been seen before adds the pattern
+    /// to the list of patterns, assigns it an id, and sets it's frequency to 1
+    /// if the pattern has been seen before just increments its frequency
+    /// returns the (possibly new) tile id
+    fn process_tile(&mut self, loc: UVec2) -> TileId {
+        let pattern = self.rgba_pattern_at(loc);
+        let id = match self.pattern_ids.get(&pattern) {
+            // new pattern
+            None => {
+                let new_id = self.next_tile_id();
+                self.pattern_ids.insert(pattern.clone(), new_id);
+                self.tile_frequencies.push(1);
+                new_id
+            }
+            // old pattern
+            Some(&id) => {
+                self.tile_frequencies[id] += 1;
+                id
+            }
+        };
+        self.tile_loc_map.insert(loc, id);
+        return id;
+    }
+
+    fn get_pattern_idvec(&self) -> Vec<Pattern> {
+        return self
+            .tiles
+            .iter()
+            .map(|&loc| self.rgba_arr_pattern_at(loc))
+            .collect();
+    }
+
+    fn create_wfcdata(&self) -> WfcData {
+        let patterns = self.get_pattern_idvec();
+        let tile_frequencies = self.tile_frequencies.clone();
+        let adjacency_rules = self.adjacency_rules.clone();
+        return WfcData {
+            tile_frequencies,
+            adjacency_rules,
+            patterns,
+        };
+    }
+
+    pub fn process_simple_tile(&mut self) -> WfcData {
         // iter over tile locations and store tile pixels
         // and keep track of unique tiles
         let locs = self.tile_locs();
         for loc in locs {
-            let pattern = self.rgba_pattern_at(loc);
-            let new_tile: bool = !self.pattern_ids.contains_key(&pattern);
-            if new_tile {
-                self.pattern_ids.insert(pattern.clone(), num_unique_tiles);
-                num_unique_tiles += 1;
-                tile_frequencies.push(1);
-            } else {
-                tile_frequencies[self.pattern_ids[&pattern]] += 1;
-            }
-            let id = self.pattern_ids[&pattern];
-            self.tile_loc_map.insert(loc, id);
+            let id = self.process_tile(loc);
 
             // construct adjacency rules
             if self.config.wrap {
@@ -129,57 +196,141 @@ impl PreProcessor {
                 if on_right_edge {
                     let left_loc = UVec2 { x: 0, y: loc.y };
                     let left_id = self.tile_loc_map[&left_loc];
-                    adjacency_rules.allow(id, left_id, crate::adjacency_rules::CardinalDirs::Right);
+                    self.adjacency_rules.allow(id, left_id, Right);
                 }
                 if on_top_edge {
                     let bottom_loc = loc - UVec2 { x: loc.x, y: 0 };
                     let bottom_id = self.tile_loc_map[&bottom_loc];
-                    adjacency_rules.allow(
-                        id,
-                        bottom_id,
-                        crate::adjacency_rules::CardinalDirs::Down,
-                    );
+                    self.adjacency_rules.allow(id, bottom_id, Down);
                 }
             }
-            // locs are in column major order so left (<) and below (v) tiles are already extracted
-            // add the adjacency rules in these directions if not on an edge
-            let on_left_edge = loc.x == 0;
-            let on_bottom_edge = loc.y == 0;
-            let tsize = self.tile_size as u32;
-            if !on_left_edge {
-                let left_loc = loc - UVec2 { x: tsize, y: 0 };
-                let left_id = self.tile_loc_map[&left_loc];
-                adjacency_rules.allow(id, left_id, crate::adjacency_rules::CardinalDirs::Left);
-            }
-            if !on_bottom_edge {
-                let bottom_loc = loc - UVec2 { x: 0, y: tsize };
-                let bottom_id = self.tile_loc_map[&bottom_loc];
-                adjacency_rules.allow(id, bottom_id, crate::adjacency_rules::CardinalDirs::Up);
-            }
+            self.add_adjacency_rules_from_previously_parsed_tiles(loc, id);
         }
 
-        // fill self.tiles
-        self.tiles = vec![UVec2::default(); self.pattern_ids.len()];
-        // unsorted vec of unique (id,pattern) entries
-        for (&loc, &id) in &self.tile_loc_map {
-            self.tiles[id] = loc;
-        }
+        self.fill_tile_idmap();
+
         assert!(!self.pattern_ids.is_empty());
         assert!(!self.tiles.is_empty());
 
-        let patterns = self
-            .tiles
-            .iter()
-            .map(|&loc| self.rgba_arr_pattern_at(loc))
-            .collect();
-        return WfcData {
-            tile_frequencies,
-            adjacency_rules,
-            patterns,
+        return self.create_wfcdata();
+    }
+
+    fn get_edge(&self, sub_img: &PatternSubImage, side: CardinalDirs) -> Edge {
+        let ts_u32 = self.tile_size as u32;
+        let sub_sub_img = match side {
+            Up => sub_img.view(0, 0, ts_u32, 1),
+            Left => sub_img.view(0, 0, 1, ts_u32),
+            Right => sub_img.view(ts_u32 - 1, 0, 1, ts_u32),
+            Down => sub_img.view(0, ts_u32 - 1, ts_u32, 1),
         };
+        // sub_sub_img.to_image().save(format!("./edges/{side:?}_{:?}.png",sub_img.bounds())).unwrap();
+        let mut edge: Vec<Rgba<u8>> = sub_sub_img.pixels().map(|(_, _, rgba)| rgba).collect();
+        if self.config.wang_flip {
+            match side {
+                Up | Left => (),
+                Down | Right => edge.reverse()
+            }
+        }
+        return edge;
+    }
+
+    fn get_edges(&self, sub_img: &PatternSubImage) -> [Edge; 4] {
+        return CardinalDirs::as_array().map(|dir| self.get_edge(sub_img, dir));
+    }
+
+    pub fn process_wang(&mut self) -> WfcData {
+        let mut vsides: HashSet<Edge> = HashSet::new();
+        let mut hsides: HashSet<Edge> = HashSet::new();
+        let mut edgemap: IdMap<[Edge; 4]> = IdMap::new();
+        let hdirs = [Up, Down];
+        let vdirs = [Left, Right];
+        for loc in self.tile_locs() {
+            let id = self.process_tile(loc);
+            let sub_img = self.image_at(loc);
+            let edges = self.get_edges(&sub_img);
+            for vdir in vdirs {
+                vsides.insert(edges[vdir].clone());
+            }
+            for hdir in hdirs {
+                hsides.insert(edges[hdir].clone());
+            }
+            // old id
+            if id < edgemap.len() {
+                // do nothing
+            }
+            // new id
+            else if id == edgemap.len() {
+                edgemap.push(edges);
+            } else {
+                unreachable!("id was incremented twice");
+            }
+        }
+        type EdgeId = usize;
+        let vside_map: HashMap<&Edge, EdgeId> = vsides
+            .iter()
+            .enumerate()
+            .map(|(edge_id, edge)| (edge, edge_id))
+            .collect();
+        let hside_map: HashMap<&Edge, EdgeId> = hsides
+            .iter()
+            .enumerate()
+            .map(|(edge_id, edge)| (edge, edge_id))
+            .collect();
+        assert!(vside_map.len() == 2);
+        assert!(hside_map.len() == 2);
+        let mut edge_id_map: IdMap<[EdgeId; 4]> = IdMap::new();
+        for tile_id in self.tile_ids() {
+            let mut edge_ids: [EdgeId; 4] = Default::default();
+            let edges = &edgemap[tile_id];
+            for vdir in vdirs {
+                let edge = &edges[vdir];
+                let edge_id = vside_map.get(edge).unwrap();
+                edge_ids[vdir] = *edge_id;
+            }
+            for hdir in hdirs {
+                let edge = &edges[hdir];
+                let edge_id = hside_map.get(edge).unwrap();
+                edge_ids[hdir] = *edge_id;
+            }
+            edge_id_map.push(edge_ids);
+        }
+        dbg!(&edge_id_map);
+
+        for tile_id in self.tile_ids() {
+            let edges = &edge_id_map[tile_id];
+            for other_tile_id in self.tile_ids() {
+                let other_edges = &edge_id_map[other_tile_id];
+                // for dir in CardinalDirs::as_array() {
+                //     let edge_id = edges[dir];
+                //     if other_edges[-dir] == edge_id {
+                //         log::info!("allowing {tile_id} -> {dir:?} -> {other_tile_id}");
+                //         self.adjacency_rules.allow(tile_id, other_tile_id, dir);
+                //     }
+                // }
+                if other_edges[Down] == edges[Up] {
+                    self.adjacency_rules.allow(tile_id, other_tile_id, Up);
+                }
+                if other_edges[Right] == edges[Left] {
+                    self.adjacency_rules.allow(tile_id, other_tile_id, Left);
+                }
+            }
+        }
+
+        self.fill_tile_idmap();
+
+        return dbg!(self.create_wfcdata());
+    }
+
+    pub fn process(&mut self) -> WfcData {
+        if self.config.wang {
+            return self.process_wang();
+        } else {
+            return self.process_simple_tile();
+        }
     }
 }
 
+// #[derive(Debug)]
 pub struct WfcData {
     pub tile_frequencies: IdMap<usize>,
     pub adjacency_rules: AdjacencyRules,
@@ -200,11 +351,17 @@ impl Debug for WfcData {
 #[derive(Debug, Clone)]
 pub struct ProcessorConfig {
     pub wrap: bool,
+    pub wang: bool,
+    pub wang_flip: bool,
 }
 
 impl Default for ProcessorConfig {
     fn default() -> Self {
-        Self { wrap: false }
+        Self {
+            wrap: false,
+            wang: false,
+            wang_flip: false,
+        }
     }
 }
 
