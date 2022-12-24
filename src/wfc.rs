@@ -206,6 +206,7 @@ impl Model {
 
     pub fn collapse_cell(&mut self) {
         if let Some(loc) = self.get_cell_to_collapse() {
+            log::info!("Collapsing Cell at {loc:?}");
             let tile_removed_events = {
                 let cell = &mut self
                     .get_cell_mut(loc)
@@ -216,7 +217,7 @@ impl Model {
             self.wave = tile_removed_events;
             self.remaining_uncollapsed -= 1;
             self.updated_cells.push(loc);
-            log::info!(
+            log::trace!(
                 "Collapsed cell {:?}. Removed {}/{} tile options",
                 loc,
                 self.wave.len(),
@@ -228,6 +229,7 @@ impl Model {
     pub fn propogate(&mut self) {
         match self.wave.pop() {
             Some(event) => {
+                log::info!("Propogating removal of tile {} from cell at {:?}", event.tile_id, event.cell_loc);
                 assert!(self.board.inbounds(event.cell_loc.as_ivec2()));
 
                 let adjacent_tile_locs = self.board.cardinal_neighbors(event.cell_loc);
@@ -235,7 +237,7 @@ impl Model {
                     if !self.board.inbounds(adjacent_tile_loc) {
                         continue;
                     }
-                    log::info!(
+                    log::trace!(
                         "{:?} -> {:?} -> {:?}",
                         event.cell_loc,
                         dir,
@@ -248,7 +250,7 @@ impl Model {
                     if let Some(tile_removed_events) =
                         adj_cell.remove_enabler(event.tile_id, dir, &self.adjacency_rules)
                     {
-                        log::info!("removed {} options", tile_removed_events.len());
+                        log::trace!("removed {} options", tile_removed_events.len());
                         for event in tile_removed_events {
                             self.wave.push(event);
                         }
@@ -275,10 +277,8 @@ impl Model {
         }
         // stack empty -> need to collapse a tile
         if self.wave.is_empty() {
-            log::info!("Collapsing");
             self.collapse_cell();
         } else {
-            log::info!("Propogating");
             self.propogate();
         }
     }

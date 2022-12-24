@@ -9,7 +9,7 @@ use derive_more::{Deref, DerefMut, From};
 use glam::UVec2;
 use image::{io::Reader as ImageReader, Rgba, RgbaImage};
 use pixels::Pixels;
-use preprocessor::{Pattern, PreProcessor, ProcessorConfig, RgbaPattern, WfcData};
+use preprocessor::{Pattern, PreProcessor, ProcessorConfig, WfcData};
 use simplelog::*;
 use std::{fmt::Debug, fs::File, path::Path};
 use tile::IdMap;
@@ -29,6 +29,7 @@ pub struct Wfc {
     tile_size: usize,
     pixel_scale: u32,
     output_image: Option<RgbaImage>,
+}
 
 impl Debug for Wfc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -87,7 +88,7 @@ impl Wfc {
         let patterns: IdMap<Pattern> = paths
             .iter()
             // load image
-            .map(|path| Self::load_image(path))
+            .map(Self::load_image)
             // map Rgba<u8> to [u8; 4]
             .map(|img| img.pixels().map(|rgba| rgba.0).collect())
             .collect();
@@ -281,9 +282,7 @@ enum CreationMode {
 pub struct Window {
     _window: winit::window::Window,
     pixels: Pixels,
-    grid_dims: UVec2,
     tile_size: usize,
-    patterns: IdMap<RgbaPattern>,
     output_dimensions: UVec2,
 }
 
@@ -312,13 +311,10 @@ impl Window {
                 .blend_state(pixels::wgpu::BlendState::REPLACE)
                 .build()
                 .unwrap();
-        let grid_dims = output_dimensions / tile_size_var as u32;
         Self {
             _window: window,
             pixels,
-            grid_dims,
             tile_size: tile_size_var,
-            patterns: IdMap::default(),
             output_dimensions,
         }
     }

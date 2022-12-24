@@ -34,7 +34,7 @@ impl AdjacencyRules {
 
     fn allow_one_way(&mut self, from: usize, to: usize, dir: CardinalDirs) {
         self.map.entry(from).or_insert_with(Default::default)[dir].insert(to);
-        log::info!("allowing {from} -> {dir:?} -> {to}");
+        log::trace!("allowing {from} -> {dir:?} -> {to}");
     }
 
     pub fn is_allowed(&self, from: usize, to: usize, dir: CardinalDirs) -> bool {
@@ -100,7 +100,7 @@ impl EnablerDict {
                     // tile is already removed
                     // do nothing
                     None => {
-                        log::info!("tile {id} already removed");
+                        log::trace!("tile {id} already removed");
                         None
                     },
                     // tile has enablers
@@ -108,7 +108,7 @@ impl EnablerDict {
                         // count in opposite dir i.e. pointing towards removed_enabler
                         let count_in_dir = &mut counts[-dir];
 
-                        log::info!("tile {id} not removed yet, decrementing count: {count_in_dir} in -{dir:?}");
+                        log::trace!("tile {id} not removed yet, decrementing count: {count_in_dir} in -{dir:?}");
                         assert!(count_in_dir != &0);
                         // decrementing this tile would remove all enablers in a dir
                         // making the this tile impossible
