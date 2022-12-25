@@ -11,6 +11,7 @@ use image::{io::Reader as ImageReader, Rgba, RgbaImage};
 use pixels::Pixels;
 use preprocessor::{Pattern, PreProcessor, ProcessorConfig, WfcData};
 use simplelog::*;
+use log::error;
 use std::{fmt::Debug, fs::File, path::Path};
 use tile::IdMap;
 use wfc::Model;
@@ -186,7 +187,7 @@ impl Wfc {
         self.wfc_data = Some(processor.process());
     }
 
-    fn pre_run(&mut self) -> Model {
+    fn get_model(&mut self) -> Model {
         if self.creation_mode.is_from_image() {
             self.process_image();
         }
@@ -200,68 +201,11 @@ impl Wfc {
 
     fn run(mut self) {
         // thread::sleep(Duration::from_millis(250));
-        let mut model = self.pre_run();
-        loop {
+        let mut model = self.get_model();
+        while model.remaining_uncollapsed > 0 {
             model.step();
         }
-    }
-
-    pub fn run_with_callback<C: Callback + 'static>(mut self, close_behavior: CompletionBehavior) {
-        // TODO: Find way to lazily construct callback so order doesn't matter
-        let mut model = self.pre_run();
-        let mut callback = C::new(&self);
-        while model.remaining_uncollapsed > 0 || close_behavior.is_keep_running() {
-            model.step();
-            callback.run(&model);
-            // std::thread::sleep(std::time::Duration::from_millis(200));
-        }
-    }
-
-    pub fn run_render(self, close_behavior: CompletionBehavior) {
-        self.run_with_callback::<RenderCallback>(close_behavior);
-    }
-}
-
-pub trait Callback {
-    fn new(wfc: &Wfc) -> Self
-    where
-        Self: Sized;
-    fn run(&mut self, model: &Model);
-}
-
-struct RenderCallback {
-    window: Window,
-    tile_size: usize,
-    patterns: Vec<Pattern>,
-}
-
-impl RenderCallback {
-    fn render_cell(&mut self, cell: &wfc::Cell) {
-        self.window
-            .update_grid_cell(cell.loc, cell.render(&self.patterns, self.tile_size));
-    }
-    fn render(&mut self, model: &Model) {
-        for &cell_loc in &model.updated_cells {
-            // TODO: move cell render here
-            self.render_cell(model.get_cell(cell_loc).unwrap());
-        }
-        self.window.render();
-    }
-}
-
-impl Callback for RenderCallback {
-    fn new(wfc: &Wfc) -> Self {
-        let window = Window::new(wfc.output_dims.unwrap(), wfc.pixel_scale, wfc.tile_size);
-        let tile_size = wfc.tile_size;
-        let patterns = wfc.get_patterns().to_owned();
-        return Self {
-            window,
-            tile_size,
-            patterns,
-        };
-    }
-    fn run(&mut self, model: &Model) {
-        self.render(model);
+        // TODO: save final image
     }
 }
 
@@ -279,19 +223,21 @@ enum CreationMode {
     Unknown,
 }
 
-pub struct Window {
-    _window: winit::window::Window,
+pub struct WfcWindow {
+    window: winit::window::Window,
     pixels: Pixels,
     tile_size: usize,
     output_dimensions: UVec2,
+    event_loop: Option<winit::event_loop::EventLoop<()>>,
+    wfc: Option<Wfc>,
 }
 
-impl Window {
-    pub fn new(output_dimensions: UVec2, pixel_size: u32, tile_size_var: usize) -> Self {
+impl WfcWindow {
+    pub fn new(window_dimensions: UVec2, pixel_size: u32, tile_size_var: usize) -> Self {
         let event_loop = winit::event_loop::EventLoop::new();
         let size = winit::dpi::LogicalSize::new(
-            output_dimensions.x * pixel_size,
-            output_dimensions.y * pixel_size,
+            window_dimensions.x * pixel_size,
+            window_dimensions.y * pixel_size,
         );
         let window = winit::window::WindowBuilder::new()
             .with_inner_size(size)
@@ -307,19 +253,63 @@ impl Window {
             &window,
         );
         let pixels =
-            pixels::PixelsBuilder::new(output_dimensions.x, output_dimensions.y, surface_texture)
+            pixels::PixelsBuilder::new(window_dimensions.x, window_dimensions.y, surface_texture)
                 .blend_state(pixels::wgpu::BlendState::REPLACE)
                 .build()
                 .unwrap();
         Self {
-            _window: window,
+            window,
             pixels,
             tile_size: tile_size_var,
-            output_dimensions,
+            output_dimensions: window_dimensions,
+            event_loop: Some(event_loop),
+            wfc: None,
         }
     }
 
-    pub fn update_grid_cell(&mut self, cell_coord: UVec2, pattern: Pattern) {
+    fn update_cell_in_frame_buffer(&mut self, cell: &wfc::Cell) {
+        self.render_cell(cell.loc, cell.render(self.wfc.as_ref().unwrap().get_patterns(), self.tile_size));
+    }
+    fn update_frame_buffer(&mut self, model: &mut Model) {
+        while let Some(cell_loc) = model.updated_cells.pop() {
+            // TODO: move cell render here
+            self.update_cell_in_frame_buffer(model.get_cell(cell_loc).unwrap());
+        }
+    }
+
+    pub fn play(mut self, close_behavior: CompletionBehavior, wfc: Wfc) {
+        self.wfc = Some(wfc);
+        // TODO: call setup window func here
+        let mut model = self.wfc.as_mut().unwrap().get_model();
+
+        for cell in model.iter_cells() {
+            self.update_cell_in_frame_buffer(cell);
+        }
+        let event_loop = self.event_loop.take().unwrap();
+        event_loop.run(move |event, _, control_flow| {
+            // update frame
+            if let winit::event::Event::RedrawRequested(_window_id) = event {
+                self.update_frame_buffer(&mut model);
+                let mut exit = false;
+                if let Err(err) = self.pixels.render() {
+                    error!("pixels.render() failed: {err}");
+                    exit = true;
+                }
+                if model.remaining_uncollapsed == 0 && close_behavior.is_stop_when_completed() {
+                    log::info!("Wfc completed");
+                    exit = true;
+                }
+                if exit {
+                    *control_flow = winit::event_loop::ControlFlow::Exit;
+                    return;
+                }
+            }
+            model.step();
+            self.window.request_redraw();
+        });
+    }
+
+    pub fn render_cell(&mut self, cell_coord: UVec2, pattern: Pattern) {
         let frame = self.pixels.get_frame_mut();
         // let pattern = domain.filter_allowed(&self.patterns).next().unwrap();
         let frame_coord = cell_coord * self.tile_size as u32;

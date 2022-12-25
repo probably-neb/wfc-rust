@@ -139,28 +139,25 @@ pub struct Model {
     wave: Vec<TileRemovalEvent>,
     pub remaining_uncollapsed: u32,
     pub updated_cells: Vec<UVec2>,
-    first_step: bool,
     // tile_size: usize,
 }
 
 impl Model {
     pub fn new(adjacency_rules: AdjacencyRules, tile_frequencies: Vec<usize>, dims: UVec2) -> Self {
-        let num_cells = Grid(dims).area();
+        let grid = Grid(dims);
+        let num_cells = grid.area();
 
         // TODO: consider just initializing these in  cell init
         // for cleanliness
         let probability_dict = ProbabilityDict::new(&tile_frequencies);
         let mut entropy_heap = MinEntropyHeap::new();
         let enabler_dict = EnablerDict::new(&adjacency_rules);
-        let mut updated_cells = Vec::new();
 
-        let grid = Grid(dims);
         let mut vals = Vec::with_capacity(num_cells as usize);
         for loc in grid.iter_locs() {
             let cell = Cell::new(probability_dict.clone(), enabler_dict.clone(), loc);
             entropy_heap.push(cell.get_entropy_entry());
             vals.push(cell);
-            updated_cells.push(loc);
         }
         let board = Board { grid, vals };
         return Self {
@@ -169,9 +166,7 @@ impl Model {
             board,
             // dims,
             entropy_heap,
-            updated_cells,
-            first_step: true,
-            remaining_uncollapsed: Grid(dims).area(),
+            remaining_uncollapsed: num_cells,
             ..Default::default()
         };
     }
@@ -265,14 +260,11 @@ impl Model {
     }
 
     pub fn step(&mut self) {
-        // clear updated cells unless this is the first step
-        if self.first_step {
-            self.first_step = false;
-        } else {
-            self.updated_cells.clear();
-        }
         // no tiles left to collapse -> done
         if self.remaining_uncollapsed == 0 {
+            for cell in self.iter_cells() {
+                assert!(cell.domain.allowed_iter().count() == 1);
+            }
             return;
         }
         // stack empty -> need to collapse a tile
@@ -480,8 +472,6 @@ impl TileRemovalEvent {
 mod test {
     use crate::{
         simple_patterns::{construct_simple_patterns, CHARS},
-        Callback,
-        CompletionBehavior::StopWhenCompleted,
     };
 
     use super::*;
@@ -507,28 +497,17 @@ mod test {
         }
     }
 
-    struct AdjacencyRulesSatisfiedCallback;
-
-    impl Callback for AdjacencyRulesSatisfiedCallback {
-        fn new(_wfc: &crate::Wfc) -> Self
-        where
-            Self: Sized,
-        {
-            return Self;
-        }
-        fn run(&mut self, model: &Model) {
-            // Only if not propogating (i.e. not all domains updated yet)
-            if model.wave.is_empty() {
-                all_adjacency_rules_satisfied(model);
-            }
-        }
-    }
-
     #[test]
     fn adjacency_rules_fulfilled_always() {
-        construct_simple_patterns()
-            .with_output_dimensions(40, 40)
-            .run_with_callback::<AdjacencyRulesSatisfiedCallback>(StopWhenCompleted);
+        let mut wfc = construct_simple_patterns()
+            .with_output_dimensions(40, 40);
+        let mut model = wfc.get_model();
+        while model.remaining_uncollapsed > 0 {
+            if model.wave.is_empty() {
+                all_adjacency_rules_satisfied(&model);
+            }
+            model.step();
+        }
     }
 
     #[test]
