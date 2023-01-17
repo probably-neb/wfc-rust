@@ -85,6 +85,7 @@ impl Cell {
         return Some(events);
     }
 
+    // TODO: Move this too window
     pub fn render(&self, patterns: &Vec<Pattern>, tile_size: usize) -> Pattern {
         let allowed_patterns: Vec<(TileId, Pattern)> =
             self.domain.filter_allowed_enumerate(patterns).collect();
@@ -192,10 +193,6 @@ impl Model {
             }
         }
 
-        // return self
-        // .iter_cells()
-        // .find_map(|c| if !c.collapsed { Some(c.loc) } else { None });
-
         unreachable!("Entropy Heap should never be empty");
     }
 
@@ -224,7 +221,11 @@ impl Model {
     pub fn propogate(&mut self) {
         match self.wave.pop() {
             Some(event) => {
-                log::info!("Propogating removal of tile {} from cell at {:?}", event.tile_id, event.cell_loc);
+                log::info!(
+                    "Propogating removal of tile {} from cell at {:?}",
+                    event.tile_id,
+                    event.cell_loc
+                );
                 assert!(self.board.inbounds(event.cell_loc.as_ivec2()));
 
                 let adjacent_tile_locs = self.board.cardinal_neighbors(event.cell_loc);
@@ -259,6 +260,7 @@ impl Model {
         }
     }
 
+    /// steps the model one iteration by either collapsing or propogating TileRemovalEvents
     pub fn step(&mut self) {
         // no tiles left to collapse -> done
         if self.remaining_uncollapsed == 0 {
@@ -470,9 +472,7 @@ impl TileRemovalEvent {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        simple_patterns::{construct_simple_patterns, CHARS},
-    };
+    use crate::simple_patterns::{construct_simple_patterns, CHARS};
 
     use super::*;
 
@@ -499,8 +499,7 @@ mod test {
 
     #[test]
     fn adjacency_rules_fulfilled_always() {
-        let mut wfc = construct_simple_patterns()
-            .with_output_dimensions(40, 40);
+        let mut wfc = construct_simple_patterns().with_output_dimensions(40, 40);
         let mut model = wfc.get_model();
         while model.remaining_uncollapsed > 0 {
             if model.wave.is_empty() {
@@ -512,7 +511,7 @@ mod test {
 
     #[test]
     fn entropy_calculations() {
-        let tile_frequencies = [1,2,3,4,5];
+        let tile_frequencies = [1, 2, 3, 4, 5];
         let calculated_entropy: f32 = 2.149;
         let mut prob = ProbabilityDict::new(&tile_frequencies.to_vec());
         assert!((calculated_entropy - prob.entropy()) <= f32::EPSILON);
@@ -525,8 +524,14 @@ mod test {
     #[test]
     fn entropy_heap_is_min_heap() {
         let mut heap = MinEntropyHeap::new();
-        let min_entry = EntropyEntry { entropy: 0.1, loc: UVec2::X };
-        let max_entry = EntropyEntry { entropy: 0.2, loc: UVec2::Y };
+        let min_entry = EntropyEntry {
+            entropy: 0.1,
+            loc: UVec2::X,
+        };
+        let max_entry = EntropyEntry {
+            entropy: 0.2,
+            loc: UVec2::Y,
+        };
         heap.push(min_entry);
         heap.push(max_entry);
         assert!(heap.pop() == Some(min_entry));

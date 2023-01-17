@@ -4,20 +4,36 @@ pub mod tile;
 pub mod wfc;
 
 use adjacency_rules::AdjacencyRules;
-use derive_more::IsVariant;
-use derive_more::{Deref, DerefMut, From};
+use derive_more::{Deref, DerefMut, From, IsVariant};
 use glam::UVec2;
 use image::{io::Reader as ImageReader, Rgba, RgbaImage};
-use pixels::Pixels;
-use preprocessor::{Pattern, PreProcessor, ProcessorConfig, WfcData};
-use simplelog::*;
 use log::error;
-use std::{fmt::Debug, fs::File, path::Path};
+use pixels::{Pixels, PixelsBuilder};
+use preprocessor::{Pattern, PreProcessor, ProcessorConfig, WfcData};
+use std::{fmt::Debug, fs::File, path::Path, rc::Rc};
 use tile::IdMap;
 use wfc::Model;
+use winit::window::Window;
 
 const TILE_SIZE_DEFAULT: usize = 2;
 const PIXEL_SCALE_DEFAULT: u32 = 2;
+
+#[cfg(wasm)]
+use wasm_bindgen::prelude::*;
+
+#[allow(unused)]
+#[cfg_attr(wasm, wasm_bindgen(start))]
+pub fn run_celtic() {
+    WfcWindow::new(glam::UVec2::splat(256), 2, 32).play(
+        CompletionBehavior::KeepOpen,
+        Wfc::new_from_image_path("./inputs/celtic.png")
+            .with_tile_size(32)
+            .with_output_dimensions(256, 256)
+            .log()
+            .wang()
+            .wang_flip(),
+    );
+}
 
 #[derive(Default)]
 pub struct Wfc {
@@ -129,20 +145,29 @@ impl Wfc {
         return self;
     }
     pub fn log(self) -> Self {
-        CombinedLogger::init(vec![
-            TermLogger::new(
-                LevelFilter::Info,
-                Config::default(),
-                TerminalMode::Mixed,
-                ColorChoice::Auto,
-            ),
-            WriteLogger::new(
-                LevelFilter::Info,
-                Config::default(),
-                File::create("log").unwrap(),
-            ),
-        ])
-        .unwrap();
+        #[cfg(not(wasm))]
+        {
+            use simplelog::*;
+            CombinedLogger::init(vec![
+                TermLogger::new(
+                    LevelFilter::Info,
+                    Config::default(),
+                    TerminalMode::Mixed,
+                    ColorChoice::Auto,
+                ),
+                WriteLogger::new(
+                    LevelFilter::Info,
+                    Config::default(),
+                    File::create("log").unwrap(),
+                ),
+            ])
+            .unwrap();
+        }
+        #[cfg(wasm)]
+        {
+            std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+            console_log::init_with_level(log::Level::Trace).expect("error with logger");
+        }
         return self;
     }
     // TODO: make PatternsBuilder that has FromImage and FromPatterns variants?
@@ -211,7 +236,7 @@ impl Wfc {
 
 #[derive(IsVariant)]
 pub enum CompletionBehavior {
-    KeepRunning,
+    KeepOpen,
     StopWhenCompleted,
 }
 
@@ -224,10 +249,10 @@ enum CreationMode {
 }
 
 pub struct WfcWindow {
-    window: winit::window::Window,
+    window: Rc<Window>,
     pixels: Pixels,
     tile_size: usize,
-    output_dimensions: UVec2,
+    window_dimensions: UVec2,
     event_loop: Option<winit::event_loop::EventLoop<()>>,
     wfc: Option<Wfc>,
 }
@@ -245,30 +270,110 @@ impl WfcWindow {
             .with_max_inner_size(size)
             .build(&event_loop)
             .unwrap();
-        let hidpi_factor = window.scale_factor();
-        let p_size = size.to_physical::<f64>(hidpi_factor);
+
+        let window = Rc::new(window);
+        #[cfg(wasm)]
+        {
+            use wasm_bindgen::JsCast;
+            use winit::platform::web::WindowExtWebSys;
+
+            // Retrieve current width and height dimensions of browser client window
+            let get_window_size = || {
+                let client_window = web_sys::window().unwrap();
+                winit::dpi::LogicalSize::new(
+                    client_window.inner_width().unwrap().as_f64().unwrap(),
+                    client_window.inner_height().unwrap().as_f64().unwrap(),
+                )
+            };
+
+            let window = Rc::clone(&window);
+
+            // Initialize winit window with current dimensions of browser client
+            window.set_inner_size(get_window_size());
+
+            let client_window = web_sys::window().unwrap();
+
+            // Attach winit canvas to body element
+            web_sys::window()
+                .and_then(|win| win.document())
+                .and_then(|doc| doc.body())
+                .and_then(|body| {
+                    body.append_child(&web_sys::Element::from(window.canvas()))
+                        .ok()
+                })
+                .expect("couldn't append canvas to document body");
+
+            // Listen for resize event on browser client. Adjust winit window dimensions
+            // on event trigger
+            let closure =
+                wasm_bindgen::closure::Closure::wrap(Box::new(move |_e: web_sys::Event| {
+                    let size = get_window_size();
+                    window.set_inner_size(size)
+                }) as Box<dyn FnMut(_)>);
+            client_window
+                .add_event_listener_with_callback("resize", closure.as_ref().unchecked_ref())
+                .unwrap();
+            closure.forget();
+        }
+
+        let pixels_buf: *mut Option<Pixels> = &mut None as *mut Option<Pixels>;
+        #[cfg(wasm)]
+        {
+            wasm_bindgen_futures::spawn_local(Self::new_pixels_into_buf(
+                window_dimensions,
+                window.clone(),
+                pixels_buf,
+            ));
+        }
+        #[cfg(not(wasm))]
+        {
+            pollster::block_on(Self::new_pixels_into_buf(
+                window_dimensions,
+                window.clone(),
+                pixels_buf,
+            ));
+        }
+        let pixels = unsafe { pixels_buf.as_mut().unwrap().take().unwrap() };
+        return Self {
+            window,
+            pixels,
+            tile_size: tile_size_var,
+            wfc: None,
+            event_loop: Some(event_loop),
+            window_dimensions,
+        };
+    }
+    async fn new_pixels_into_buf(
+        window_dimensions: UVec2,
+        window: Rc<Window>,
+        buf: *mut Option<Pixels>,
+    ) {
+        let size = window.inner_size();
+        // let hidpi_factor = window.scale_factor();
+        // let p_size = size.to_physical::<f64>(hidpi_factor);
         let surface_texture = pixels::SurfaceTexture::new(
-            p_size.width.round() as u32,
-            p_size.height.round() as u32,
-            &window,
+            // p_size.width.round() as u32,
+            // p_size.height.round() as u32,
+            size.width,
+            size.height,
+            window.as_ref(),
         );
         let pixels =
             pixels::PixelsBuilder::new(window_dimensions.x, window_dimensions.y, surface_texture)
                 .blend_state(pixels::wgpu::BlendState::REPLACE)
-                .build()
+                .build_async()
+                .await
                 .unwrap();
-        Self {
-            window,
-            pixels,
-            tile_size: tile_size_var,
-            output_dimensions: window_dimensions,
-            event_loop: Some(event_loop),
-            wfc: None,
+        unsafe {
+            *buf = Some(pixels);
         }
     }
 
     fn update_cell_in_frame_buffer(&mut self, cell: &wfc::Cell) {
-        self.render_cell(cell.loc, cell.render(self.wfc.as_ref().unwrap().get_patterns(), self.tile_size));
+        self.render_cell(
+            cell.loc,
+            cell.render(self.wfc.as_ref().unwrap().get_patterns(), self.tile_size),
+        );
     }
     fn update_frame_buffer(&mut self, model: &mut Model) {
         while let Some(cell_loc) = model.updated_cells.pop() {
@@ -319,7 +424,7 @@ impl WfcWindow {
                     x: x as u32,
                     y: y as u32,
                 } + frame_coord;
-                let idx = 4 * ((frame_idx.y * self.output_dimensions.x) + frame_idx.x) as usize;
+                let idx = 4 * ((frame_idx.y * self.window_dimensions.x) + frame_idx.x) as usize;
                 // let cell_pixel = pattern[y * self.tile_size + x].0;
                 let cell_pixel: [u8; 4] = pattern[y * self.tile_size + x];
                 let frame_pixel = frame
