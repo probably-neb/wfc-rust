@@ -1,0 +1,24 @@
+[package]
+name = "wfc-window"
+version = "0.1.0"
+edition = "2021"
+rust-version= "1.59.0"
+resolver="2"
+
+[dependencies]
+wfc-lib = {path="../wfc-lib"}
+image = "0.24.4"
+glam = "0.22.0"
+rand = "0.8.5"
+winit = "0.27"
+pixels = "0.11.0"
+derive_more = {version = "0.99.17", default-features=false, features = [
+             "deref",
+             "deref_mut",
+             "index",
+             "index_mut",
+             "from",
+             "is_variant",
+]}
+log = "0.4"
+simplelog = "0.12.0"

@@ -1,37 +1,4 @@
-[package]
-name = "wfc-rust"
-version = "0.1.0"
-edition = "2021"
-
-[lib]
-crate-type = ["cdylib", "rlib"]
-
-[build-dependencies]
-cfg_aliases = "0.1.1"
-
-[dependencies]
-image = "0.24.4"
-glam = "0.22.0"
-rand = "0.8.5"
-winit = "0.27"
-pixels = "0.11.0"
-derive_more = {version = "0.99.17", default-features=false, features = [
-             "deref",
-             "deref_mut",
-             "index",
-             "index_mut",
-             "from",
-             "is_variant",
-]}
-log = "0.4"
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-console_error_panic_hook = "0.1"
-console_log = "0.2"
-wasm-bindgen = "0.2"
-wasm-bindgen-futures = "0.4"
-web-sys = { version = "0.3", features = ["GpuTextureFormat"] }
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-simplelog = "0.12.0"
-pollster = "0.2.5"
+[workspace]
+resolver = "2"
+members = ["wfc-lib", "wfc-web", "wfc-window"]
+default-members = ["wfc-window"]

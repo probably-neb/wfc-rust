@@ -445,7 +445,6 @@ mod test {
     #[test]
     fn ur_c2b3() {
         let counts = enabler_counts_common();
-        &counts;
         connect_2_blank_3(UR, [Right, Up], &counts);
     }
     #[test]
