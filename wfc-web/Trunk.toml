@@ -1,0 +1,10 @@
+# workaround: loads the wasm file and adds the bindings 
+# to window.wasm for access within js
+# https://github.com/thedodd/trunk/issues/298
+[build]
+pattern_script = "<script type=\"module\">import init, * as with_bindings from '{base}{js}';init('{base}{wasm}').then(()=>window.wasm=with_bindings);</script>"
+
+[[hooks]]
+stage = "pre_build"
+command = "/home/neb/.yarn/bin/tailwindcss"
+command_arguments = ["-o","./tailwind.css"]

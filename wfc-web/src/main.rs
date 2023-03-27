@@ -6,6 +6,7 @@ use wfc_lib::{
     wfc::{Cell, Model},
     Wfc,
 };
+use wasm_bindgen::prelude::*;
 // use winit::dpi::LogicalSize;
 // use winit::event::{Event, VirtualKeyCode};
 // use winit::event_loop::{ControlFlow, EventLoop};
@@ -14,15 +15,26 @@ use wfc_lib::{
 // #[wasm_bindgen]
 fn main() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-    console_log::init_with_level(log::Level::Trace).expect("error initializing logger");
+    console_log::init_with_level(log::Level::Warn).expect("error initializing logger");
     // run_simple_patterns();
-    wasm_bindgen_futures::spawn_local(run_celtic());
+    // wasm_bindgen_futures::spawn_local(run_celtic());
     // render_celtic();
     // render_celtic_patterns();
 }
 
+#[wasm_bindgen]
+pub async fn run_wang_tile(bytes: &[u8]) {
+    WfcWindow::new(glam::UVec2::splat(256), 2, 32).await.play(
+        Wfc::new_from_image_bytes(&bytes)
+            .with_tile_size(32)
+            .with_output_dimensions(256, 256)
+            .wang()
+    );
+}
+
 #[allow(unused)]
-async fn run_celtic() {
+#[wasm_bindgen]
+pub async fn run_celtic() {
     let image = include_bytes!("../../inputs/celtic.png");
     WfcWindow::new(glam::UVec2::splat(256), 2, 32).await.play(
         Wfc::new_from_image_bytes(image)
@@ -34,7 +46,8 @@ async fn run_celtic() {
 }
 
 #[allow(unused)]
-async fn run_dual() {
+#[wasm_bindgen]
+pub async fn run_dual() {
     WfcWindow::new(glam::UVec2::splat(256), 2, 32).await.play(
         Wfc::new_from_image_path("./inputs/dual.png")
             .with_tile_size(32)
@@ -77,16 +90,19 @@ async fn render_celtic() {
 }
 
 #[allow(unused)]
-async fn run_simple_patterns() {
+#[wasm_bindgen]
+pub async fn run_simple_patterns() {
     WfcWindow::new(glam::UVec2::splat(40), 12, 32).await.play(
         construct_simple_patterns()
             .with_tile_size(4)
-            .with_output_dimensions(40, 40)
+            .with_output_dimensions(40, 40),
     )
 }
 
 use glam::UVec2;
 use image::Rgba;
+use wasm_bindgen::JsCast;
+use winit::platform::web::WindowBuilderExtWebSys;
 use winit::window::Window;
 
 // const TILE_SIZE_DEFAULT: usize = 2;
@@ -102,14 +118,24 @@ pub struct WfcWindow {
 }
 
 impl WfcWindow {
-    pub async fn run() {
+    pub async fn new(window_dimensions: UVec2, pixel_size: u32, tile_size_var: usize) -> Self {
         let event_loop = winit::event_loop::EventLoop::new();
+        let size = winit::dpi::LogicalSize::new(
+            window_dimensions.x * pixel_size,
+            window_dimensions.y * pixel_size,
+        );
+        let canvas = web_sys::window()
+            .and_then(|win| win.document())
+            .and_then(|doc| doc.get_element_by_id("wfc"))
+            .and_then(|canvas| canvas.dyn_into::<web_sys::HtmlCanvasElement>().ok())
+            .expect("couldn't find canvas element with id=\"wfc\"");
         let window = {
             let size = winit::dpi::LogicalSize::new(200 as f64, 200 as f64);
             winit::window::WindowBuilder::new()
                 .with_title("Hello Pixels + Web")
                 .with_inner_size(size)
                 .with_min_inner_size(size)
+                .with_canvas(Some(canvas))
                 .build(&event_loop)
                 .expect("WindowBuilder error")
         };
@@ -136,79 +162,6 @@ impl WfcWindow {
             window.set_inner_size(get_window_size());
 
             let client_window = web_sys::window().unwrap();
-
-            // Attach winit canvas to body element
-            web_sys::window()
-                .and_then(|win| win.document())
-                .and_then(|doc| doc.body())
-                .and_then(|body| {
-                    body.append_child(&web_sys::Element::from(window.canvas()))
-                        .ok()
-                })
-                .expect("couldn't append canvas to document body");
-
-            // Listen for resize event on browser client. Adjust winit window dimensions
-            // on event trigger
-            let closure =
-                wasm_bindgen::closure::Closure::wrap(Box::new(move |_e: web_sys::Event| {
-                    let size = get_window_size();
-                    window.set_inner_size(size)
-                }) as Box<dyn FnMut(_)>);
-            client_window
-                .add_event_listener_with_callback("resize", closure.as_ref().unchecked_ref())
-                .unwrap();
-            closure.forget();
-        }
-
-    }
-
-    // TODO: Vsplit this and the working minimal-web pixels example and compare
-    pub async fn new(window_dimensions: UVec2, pixel_size: u32, tile_size_var: usize) -> Self {
-        let event_loop = winit::event_loop::EventLoop::new();
-        let size = winit::dpi::LogicalSize::new(
-            window_dimensions.x * pixel_size,
-            window_dimensions.y * pixel_size,
-        );
-        let window = winit::window::WindowBuilder::new()
-            .with_inner_size(size)
-            .with_min_inner_size(size)
-            .build(&event_loop)
-            .unwrap();
-
-        
-        let window = Rc::new(window);
-        #[cfg(target_arch = "wasm32")]
-        {
-            use wasm_bindgen::JsCast;
-            use winit::platform::web::WindowExtWebSys;
-
-            // Retrieve current width and height dimensions of browser client window
-            let get_window_size = || {
-                let client_window = web_sys::window().unwrap();
-                winit::dpi::LogicalSize::new(
-                    client_window.inner_width().unwrap().as_f64().unwrap(),
-                    client_window.inner_height().unwrap().as_f64().unwrap(),
-                )
-            };
-
-            let window = Rc::clone(&window);
-
-            // Initialize winit window with current dimensions of browser client
-            window.set_inner_size(get_window_size());
-
-            let client_window = web_sys::window().unwrap();
-
-            // Attach winit canvas to body element
-            // #[cfg(wasm_platform)]
-            web_sys::window()
-                .and_then(|win| win.document())
-                .and_then(|doc| doc.body())
-                .and_then(|body| {
-                    log::info!("Appending Canvas to document");
-                    body.append_child(&web_sys::Element::from(window.canvas()))
-                        .ok()
-                })
-                .expect("couldn't append canvas to document body");
 
             // Listen for resize event on browser client. Adjust winit window dimensions
             // on event trigger

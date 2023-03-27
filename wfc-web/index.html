@@ -1,9 +1,95 @@
 <!DOCTYPE html>
 <html>
-    <head>
-        <link data-trunk rel="rust" />
-    </head>
-    <body>
-        <!-- <canvas></canvas> -->
-    </body>
+  <head>
+    <link data-trunk rel="rust" />
+    <link data-trunk rel="css" href="./tailwind.css" />
+    <link data-trunk rel="copy-dir" href="assets" />
+  </head>
+
+  <body>
+    <script>
+      const wang_tiles = ["path", "celtic", "greek", "dual", "bridge"];
+      async function wangTileBytes(wang_tile) {
+        const path = `./assets/wang/${wang_tile}.png`
+          const bytes = await fetch(path)
+          .then((response) => response.blob())
+          .then((blob) => {
+            const reader = new FileReader();
+            reader.readAsArrayBuffer(blob);
+            return new Promise((resolve, reject) => {
+              reader.onloadend = function () {
+                const u8Array = new Uint8Array(reader.result);
+                resolve(u8Array);
+              };
+              reader.onerror = function () {
+                reject(reader.error);
+              };
+            });
+          });
+        return bytes;
+      }
+      let wasm = undefined;
+      let start_menu_mappings = {};
+      async function selectGame(game) {
+        console.log("select game", game);
+        let start_menu = document.getElementById("start-menu");
+        start_menu.remove();
+        if (window.wasm !== undefined) {
+          if (game == "simple_patterns") {
+            window.wasm.run_simple_patterns();
+          } else {
+            const bytes = await wangTileBytes(game);
+            window.wasm.run_wang_tile(bytes);
+          }
+        }
+      }
+      function init() {
+        window.addEventListener("load", () => {
+          document.getElementById("start-menu").style.display = "flex";
+        });
+        for (let button of document.querySelectorAll(
+          '[data-type="start-menu"]'
+        )) {
+          button.addEventListener("click", (e) => selectGame(button.value));
+        }
+        wasm = window.wasm;
+      }
+      window.onload = init;
+    </script>
+
+    <div
+      id="start-menu"
+      class="flex center justify-center items-center h-60 w-40"
+    >
+      <button
+        class="bg-blue-500 text-white font-bold py-2 px-4 rounded z-9"
+        data-type="start-menu"
+        value="celtic"
+      >
+        Celtic
+      </button>
+      <button
+        class="bg-blue-500 text-white font-bold py-2 px-4 rounded z-9"
+        data-type="start-menu"
+        value="greek"
+      >
+        Greek
+      </button>
+      <button
+        class="bg-blue-500 text-white font-bold py-2 px-4 rounded z-9"
+        data-type="start-menu"
+        value="dual"
+      >
+        Dual
+      </button>
+      <button
+        class="bg-blue-500 text-white font-bold py-2 px-4 rounded z-9"
+        data-type="start-menu"
+        value="simple_patterns"
+      >
+        Simple Patterns
+      </button>
+    </div>
+    <canvas id="wfc"></canvas>
+  </body>
 </html>
