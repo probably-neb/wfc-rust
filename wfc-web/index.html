@@ -8,10 +8,17 @@
 
   <body>
     <script>
-      const wang_tiles = ["path", "celtic", "greek", "dual", "bridge"];
+      function assert(condition, message = "") {
+        if (!condition) {
+          throw new Error("Failed Assertion:" + message);
+        }
+      }
+      // TODO: non wang tiles
+      // TODO: specifying settings in menu
+      // TODO: uploading images
       async function wangTileBytes(wang_tile) {
-        const path = `./assets/wang/${wang_tile}.png`
-          const bytes = await fetch(path)
+        const path = `./assets/wang/${wang_tile}.png`;
+        const bytes = await fetch(path)
           .then((response) => response.blob())
           .then((blob) => {
             const reader = new FileReader();
@@ -28,68 +35,71 @@
           });
         return bytes;
       }
-      let wasm = undefined;
-      let start_menu_mappings = {};
       async function selectGame(game) {
-        console.log("select game", game);
-        let start_menu = document.getElementById("start-menu");
-        start_menu.remove();
-        if (window.wasm !== undefined) {
-          if (game == "simple_patterns") {
-            window.wasm.run_simple_patterns();
-          } else {
-            const bytes = await wangTileBytes(game);
-            window.wasm.run_wang_tile(bytes);
-          }
+        assert(window.wasm !== undefined, "wasm not loaded");
+        if (game == "simple_patterns") {
+          window.wasm.run_simple_patterns();
+        } else {
+          const bytes = await wangTileBytes(game);
+          window.wasm.run_wang_tile(bytes);
         }
       }
-      function init() {
-        window.addEventListener("load", () => {
-          document.getElementById("start-menu").style.display = "flex";
-        });
-        for (let button of document.querySelectorAll(
-          '[data-type="start-menu"]'
-        )) {
+      async function init() {
+        console.log("init");
+        for (let button of document.querySelectorAll('[data-type="menu"]')) {
           button.addEventListener("click", (e) => selectGame(button.value));
         }
-        wasm = window.wasm;
+        function waitUntilDefined(value) {
+          return new Promise((resolve) => {
+            if (value() !== undefined) {
+              resolve(value());
+            } else {
+              console.log("waiting for wasm");
+              const intervalId = setInterval(() => {
+                console.log("checking for wasm");
+                if (value() !== undefined) {
+                  clearInterval(intervalId);
+                  resolve(value());
+                }
+              }, 1);
+            }
+          });
+        }
+        assert(window.wasm === undefined, "wasm already loaded");
+        wasm = await waitUntilDefined(() => window.wasm);
+        console.log("wasm loaded");
+        await selectGame("dual");
       }
       window.onload = init;
     </script>
 
-    <div
-      id="start-menu"
-      class="flex center justify-center items-center h-60 w-40"
-    >
-      <button
-        class="bg-blue-500 text-white font-bold py-2 px-4 rounded z-9"
-        data-type="start-menu"
-        value="celtic"
+    <div id="board" class="flex h-screen w-screen">
+      <div
+        id="menu"
+        class="flex-shrink-0 bg-gray-200 w-48 h-screen"
       >
-        Celtic
-      </button>
-      <button
-        class="bg-blue-500 text-white font-bold py-2 px-4 rounded z-9"
-        data-type="start-menu"
-        value="greek"
+        <ul class="p-4">
+          <li>
+            <button data-kind="menu" value="dual">Dual</button>
+          </li>
+          <li>
+            <a href="#" class="block px-4 py-2 hover:bg-gray-300"
+              >Menu Item 1</a
+            >
+          </li>
+          <li>
+            <a href="#" class="block px-4 py-2 hover:bg-gray-300"
+              >Menu Item 3</a
+            >
+          </li>
+        </ul>
+      </div>
+      <div
+        id="canvas-container"
+        class="flex items-center justify-center h-screen w-full"
       >
-        Greek
-      </button>
-      <button
-        class="bg-blue-500 text-white font-bold py-2 px-4 rounded z-9"
-        data-type="start-menu"
-        value="dual"
-      >
-        Dual
-      </button>
-      <button
-        class="bg-blue-500 text-white font-bold py-2 px-4 rounded z-9"
-        data-type="start-menu"
-        value="simple_patterns"
-      >
-        Simple Patterns
-      </button>
+        <canvas class="object-contain h-full w-full" id="wfc"></canvas>
+      </div>
     </div>
-    <canvas id="wfc"></canvas>
   </body>
 </html>

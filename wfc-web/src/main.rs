@@ -1,34 +1,36 @@
+use glam::UVec2;
+use image::Rgba;
 use pixels::Pixels;
 use std::rc::Rc;
+use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 use wfc_lib::{
     preprocessor::Pattern,
     simple_patterns::construct_simple_patterns,
     wfc::{Cell, Model},
     Wfc,
 };
-use wasm_bindgen::prelude::*;
-// use winit::dpi::LogicalSize;
-// use winit::event::{Event, VirtualKeyCode};
-// use winit::event_loop::{ControlFlow, EventLoop};
-// use winit::window::WindowBuilder;
+use winit::platform::web::WindowBuilderExtWebSys;
+use winit::window::Window;
 
-// #[wasm_bindgen]
+// const TILE_SIZE_DEFAULT: usize = 2;
+// const PIXEL_SCALE_DEFAULT: u32 = 2;
+
 fn main() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-    console_log::init_with_level(log::Level::Warn).expect("error initializing logger");
-    // run_simple_patterns();
-    // wasm_bindgen_futures::spawn_local(run_celtic());
-    // render_celtic();
-    // render_celtic_patterns();
+    console_log::init_with_level(log::Level::Trace).expect("error initializing logger");
+    // TODO: specifying seed for random weighting of tiles
+    // TODO: render preprocessor steps
 }
 
 #[wasm_bindgen]
 pub async fn run_wang_tile(bytes: &[u8]) {
-    WfcWindow::new(glam::UVec2::splat(256), 2, 32).await.play(
+    log::info!("run_wang_tile");
+    WfcWindow::new(glam::UVec2::splat(256), 32).await.play(
         Wfc::new_from_image_bytes(&bytes)
             .with_tile_size(32)
             .with_output_dimensions(256, 256)
-            .wang()
+            .wang(),
     );
 }
 
@@ -36,7 +38,7 @@ pub async fn run_wang_tile(bytes: &[u8]) {
 #[wasm_bindgen]
 pub async fn run_celtic() {
     let image = include_bytes!("../../inputs/celtic.png");
-    WfcWindow::new(glam::UVec2::splat(256), 2, 32).await.play(
+    WfcWindow::new(glam::UVec2::splat(256), 32).await.play(
         Wfc::new_from_image_bytes(image)
             .with_tile_size(32)
             .with_output_dimensions(256, 256)
@@ -48,7 +50,7 @@ pub async fn run_celtic() {
 #[allow(unused)]
 #[wasm_bindgen]
 pub async fn run_dual() {
-    WfcWindow::new(glam::UVec2::splat(256), 2, 32).await.play(
+    WfcWindow::new(glam::UVec2::splat(256), 32).await.play(
         Wfc::new_from_image_path("./inputs/dual.png")
             .with_tile_size(32)
             .with_output_dimensions(256, 256)
@@ -58,7 +60,7 @@ pub async fn run_dual() {
 
 #[allow(unused)]
 async fn render_celtic_patterns() {
-    let mut win = WfcWindow::new(glam::UVec2::splat(128), 4, 64).await;
+    let mut win = WfcWindow::new(glam::UVec2::splat(128), 64).await;
     let image = image::io::Reader::open("./inputs/celtic.png")
         .unwrap()
         .decode()
@@ -80,7 +82,7 @@ async fn render_celtic_patterns() {
 
 #[allow(unused)]
 async fn render_celtic() {
-    let mut win = WfcWindow::new(glam::UVec2::splat(128), 4, 64).await;
+    let mut win = WfcWindow::new(glam::UVec2::splat(128), 64).await;
     let image_bytes = include_bytes!("../../inputs/celtic.png");
     let image = Wfc::load_image_from_bytes(image_bytes);
     win.update(image.pixels());
@@ -92,61 +94,46 @@ async fn render_celtic() {
 #[allow(unused)]
 #[wasm_bindgen]
 pub async fn run_simple_patterns() {
-    WfcWindow::new(glam::UVec2::splat(40), 12, 32).await.play(
+    WfcWindow::new(glam::UVec2::splat(40), 32).await.play(
         construct_simple_patterns()
             .with_tile_size(4)
             .with_output_dimensions(40, 40),
     )
 }
 
-use glam::UVec2;
-use image::Rgba;
-use wasm_bindgen::JsCast;
-use winit::platform::web::WindowBuilderExtWebSys;
-use winit::window::Window;
-
-// const TILE_SIZE_DEFAULT: usize = 2;
-// const PIXEL_SCALE_DEFAULT: u32 = 2;
-
 pub struct WfcWindow {
     window: Rc<Window>,
     pixels: Pixels,
-    tile_size: usize,
+    tile_size: usize, // TODO: remove tile_size from this struct and use the variable used in self.wfc
     window_dimensions: UVec2,
     event_loop: Option<winit::event_loop::EventLoop<()>>,
     wfc: Option<Wfc>,
 }
 
 impl WfcWindow {
-    pub async fn new(window_dimensions: UVec2, pixel_size: u32, tile_size_var: usize) -> Self {
+    pub async fn new(window_dimensions: UVec2, tile_size_var: usize) -> Self {
+        // FIXME: set window size based on canvas size with scaling
         let event_loop = winit::event_loop::EventLoop::new();
-        let size = winit::dpi::LogicalSize::new(
-            window_dimensions.x * pixel_size,
-            window_dimensions.y * pixel_size,
-        );
         let canvas = web_sys::window()
             .and_then(|win| win.document())
             .and_then(|doc| doc.get_element_by_id("wfc"))
             .and_then(|canvas| canvas.dyn_into::<web_sys::HtmlCanvasElement>().ok())
             .expect("couldn't find canvas element with id=\"wfc\"");
         let window = {
-            let size = winit::dpi::LogicalSize::new(200 as f64, 200 as f64);
             winit::window::WindowBuilder::new()
-                .with_title("Hello Pixels + Web")
-                .with_inner_size(size)
-                .with_min_inner_size(size)
+                .with_title("WFC")
                 .with_canvas(Some(canvas))
                 .build(&event_loop)
                 .expect("WindowBuilder error")
         };
+        log::info!("window created and attached to canvas");
 
         let window = Rc::new(window);
 
+        // FIXME: set clippy target arch to wasm32 to avoid
+        // warnings and having to use this block to avoid them
         #[cfg(target_arch = "wasm32")]
         {
-            use wasm_bindgen::JsCast;
-            use winit::platform::web::WindowExtWebSys;
-
             // Retrieve current width and height dimensions of browser client window
             let get_window_size = || {
                 let client_window = web_sys::window().unwrap();
@@ -159,33 +146,30 @@ impl WfcWindow {
             let window = Rc::clone(&window);
 
             // Initialize winit window with current dimensions of browser client
-            window.set_inner_size(get_window_size());
+            // window.set_inner_size(get_window_size());
 
             let client_window = web_sys::window().unwrap();
 
             // Listen for resize event on browser client. Adjust winit window dimensions
             // on event trigger
-            let closure =
-                wasm_bindgen::closure::Closure::wrap(Box::new(move |_e: web_sys::Event| {
-                    let size = get_window_size();
-                    window.set_inner_size(size)
-                }) as Box<dyn FnMut(_)>);
-            client_window
-                .add_event_listener_with_callback("resize", closure.as_ref().unchecked_ref())
-                .unwrap();
-            closure.forget();
+            // let closure =
+            //     wasm_bindgen::closure::Closure::wrap(Box::new(move |_e: web_sys::Event| {
+            //         let size = get_window_size();
+            //         window.set_inner_size(size)
+            //     }) as Box<dyn FnMut(_)>);
+            // client_window
+            //     .add_event_listener_with_callback("resize", closure.as_ref().unchecked_ref())
+            //     .unwrap();
+            // closure.forget();
         }
 
         let size = window.inner_size();
-        // let hidpi_factor = window.scale_factor();
-        // let p_size = size.to_physical::<f64>(hidpi_factor);
         let surface_texture = pixels::SurfaceTexture::new(
-            // p_size.width.round() as u32,
-            // p_size.height.round() as u32,
             size.width,
             size.height,
             window.as_ref(),
         );
+        log::info!("surface texture built");
 
         let pixels =
             pixels::PixelsBuilder::new(window_dimensions.x, window_dimensions.y, surface_texture)
@@ -193,6 +177,7 @@ impl WfcWindow {
                 .build_async()
                 .await
                 .unwrap();
+        log::info!("pixels built");
         return Self {
             window,
             pixels,
@@ -221,12 +206,15 @@ impl WfcWindow {
         // TODO: call setup window func here
         let mut model = self.wfc.as_mut().unwrap().get_model();
 
+        // load initial state of model
         for cell in model.iter_cells() {
             self.update_cell_in_frame_buffer(cell);
         }
         let event_loop = self.event_loop.take().unwrap();
+        let mut done = |m: &Model| m.remaining_uncollapsed == 0;
         event_loop.run(move |event, _, control_flow| {
-            // update frame
+            // TODO: handle window resizing
+
             if let winit::event::Event::RedrawRequested(_window_id) = event {
                 self.update_frame_buffer(&mut model);
                 let mut exit = false;
@@ -234,17 +222,15 @@ impl WfcWindow {
                     log::error!("pixels.render() failed: {err}");
                     exit = true;
                 }
-                if model.remaining_uncollapsed == 0 {
-                    log::info!("Wfc completed");
-                    // exit = true;
-                }
                 if exit {
                     *control_flow = winit::event_loop::ControlFlow::Exit;
                     return;
                 }
             }
-            model.step();
-            self.window.request_redraw();
+            if !done(&model) {
+                model.step();
+                self.window.request_redraw();
+            }
         });
     }
 
