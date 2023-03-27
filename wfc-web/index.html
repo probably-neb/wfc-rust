@@ -36,6 +36,7 @@
         return bytes;
       }
       async function selectGame(game) {
+      console.log("selectGame", game);
         assert(window.wasm !== undefined, "wasm not loaded");
         if (game == "simple_patterns") {
           window.wasm.run_simple_patterns();
@@ -66,9 +67,8 @@
           });
         }
         assert(window.wasm === undefined, "wasm already loaded");
-        wasm = await waitUntilDefined(() => window.wasm);
+        await waitUntilDefined(() => window.wasm);
         console.log("wasm loaded");
-        await selectGame("dual");
       }
       window.onload = init;
     </script>
@@ -80,7 +80,7 @@
       >
         <ul class="p-4">
           <li>
-            <button data-kind="menu" value="dual">Dual</button>
+            <button data-type="menu" value="dual">Dual</button>
           </li>
           <li>
             <a href="#" class="block px-4 py-2 hover:bg-gray-300"

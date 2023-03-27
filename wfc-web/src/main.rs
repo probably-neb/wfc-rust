@@ -27,79 +27,24 @@ fn main() {
 pub async fn run_wang_tile(bytes: &[u8]) {
     log::info!("run_wang_tile");
     WfcWindow::new(glam::UVec2::splat(256), 32).await.play(
-        Wfc::new_from_image_bytes(&bytes)
+        WfcWebBuilder::new_from_image_bytes(&bytes)
             .with_tile_size(32)
             .with_output_dimensions(256, 256)
             .wang(),
     );
 }
 
-#[allow(unused)]
-#[wasm_bindgen]
-pub async fn run_celtic() {
-    let image = include_bytes!("../../inputs/celtic.png");
-    WfcWindow::new(glam::UVec2::splat(256), 32).await.play(
-        Wfc::new_from_image_bytes(image)
-            .with_tile_size(32)
-            .with_output_dimensions(256, 256)
-            .wang()
-            .wang_flip(),
-    );
-}
 
-#[allow(unused)]
-#[wasm_bindgen]
-pub async fn run_dual() {
-    WfcWindow::new(glam::UVec2::splat(256), 32).await.play(
-        Wfc::new_from_image_path("./inputs/dual.png")
-            .with_tile_size(32)
-            .with_output_dimensions(256, 256)
-            .wang(),
-    );
-}
-
-#[allow(unused)]
-async fn render_celtic_patterns() {
-    let mut win = WfcWindow::new(glam::UVec2::splat(128), 64).await;
-    let image = image::io::Reader::open("./inputs/celtic.png")
-        .unwrap()
-        .decode()
-        .unwrap()
-        .to_rgba8();
-    let mut processor = wfc_lib::preprocessor::PreProcessor::new(
-        &image,
-        64,
-        wfc_lib::preprocessor::ProcessorConfig::default(),
-    );
-    let data = processor.process();
-    for (id, &loc) in processor.tiles.iter().enumerate() {
-        win.render_cell(loc / 64, data.patterns[id].clone());
-    }
-    loop {
-        win.render();
-    }
-}
-
-#[allow(unused)]
-async fn render_celtic() {
-    let mut win = WfcWindow::new(glam::UVec2::splat(128), 64).await;
-    let image_bytes = include_bytes!("../../inputs/celtic.png");
-    let image = Wfc::load_image_from_bytes(image_bytes);
-    win.update(image.pixels());
-    loop {
-        win.render();
-    }
-}
-
-#[allow(unused)]
-#[wasm_bindgen]
-pub async fn run_simple_patterns() {
-    WfcWindow::new(glam::UVec2::splat(40), 32).await.play(
-        construct_simple_patterns()
-            .with_tile_size(4)
-            .with_output_dimensions(40, 40),
-    )
-}
+// FIXME: get simple patterns working again
+// #[allow(unused)]
+// #[wasm_bindgen]
+// pub async fn run_simple_patterns() {
+//     WfcWindow::new(glam::UVec2::splat(40), 32).await.play(
+//         construct_simple_patterns()
+//             .with_tile_size(4)
+//             .with_output_dimensions(40, 40),
+//     )
+// }
 
 pub struct WfcWindow {
     window: Rc<Window>,
@@ -107,12 +52,10 @@ pub struct WfcWindow {
     tile_size: usize, // TODO: remove tile_size from this struct and use the variable used in self.wfc
     window_dimensions: UVec2,
     event_loop: Option<winit::event_loop::EventLoop<()>>,
-    wfc: Option<Wfc>,
 }
 
 impl WfcWindow {
     pub async fn new(window_dimensions: UVec2, tile_size_var: usize) -> Self {
-        // FIXME: set window size based on canvas size with scaling
         let event_loop = winit::event_loop::EventLoop::new();
         let canvas = web_sys::window()
             .and_then(|win| win.document())
@@ -182,33 +125,37 @@ impl WfcWindow {
             window,
             pixels,
             tile_size: tile_size_var,
-            wfc: None,
             event_loop: Some(event_loop),
             window_dimensions,
         };
     }
 
-    fn update_cell_in_frame_buffer(&mut self, cell: &Cell) {
+    fn update_cell_in_frame_buffer(&mut self, cell: &Cell, patterns: &Vec<Pattern>) {
         self.render_cell(
             cell.loc,
-            cell.render(self.wfc.as_ref().unwrap().get_patterns(), self.tile_size),
+            cell.render(patterns, self.tile_size),
         );
     }
-    fn update_frame_buffer(&mut self, model: &mut Model) {
+
+    fn update_frame_buffer(&mut self, model: &mut Model, patterns: &Vec<Pattern>) {
         while let Some(cell_loc) = model.updated_cells.pop() {
             // TODO: move cell render here
-            self.update_cell_in_frame_buffer(model.get_cell(cell_loc).unwrap());
+            self.update_cell_in_frame_buffer(model.get_cell(cell_loc).unwrap(), patterns);
         }
     }
 
-    pub fn play(mut self, wfc: Wfc) {
-        self.wfc = Some(wfc);
-        // TODO: call setup window func here
-        let mut model = self.wfc.as_mut().unwrap().get_model();
+    pub fn play(mut self, mut wfc_builder: WfcWebBuilder) {
+        // TODO: create surface texture and pixels buffer here 
+        // in order to allow running again with new model
+
+        // TODO: consider moving WFCBuilder into web crate and exposing 
+        // it via wasm_bindgen so that it becomes the js api
+
+        let (mut model,mut patterns) = wfc_builder.build();
 
         // load initial state of model
         for cell in model.iter_cells() {
-            self.update_cell_in_frame_buffer(cell);
+            self.update_cell_in_frame_buffer(cell, &patterns);
         }
         let event_loop = self.event_loop.take().unwrap();
         let mut done = |m: &Model| m.remaining_uncollapsed == 0;
@@ -216,7 +163,7 @@ impl WfcWindow {
             // TODO: handle window resizing
 
             if let winit::event::Event::RedrawRequested(_window_id) = event {
-                self.update_frame_buffer(&mut model);
+                self.update_frame_buffer(&mut model, &patterns);
                 let mut exit = false;
                 if let Err(err) = self.pixels.render() {
                     log::error!("pixels.render() failed: {err}");
@@ -226,6 +173,9 @@ impl WfcWindow {
                     *control_flow = winit::event_loop::ControlFlow::Exit;
                     return;
                 }
+            }
+            else {
+                log::info!("event: {:?}", event);
             }
             if !done(&model) {
                 model.step();
@@ -267,6 +217,123 @@ impl WfcWindow {
     }
 }
 
+#[derive(Default)]
+#[wasm_bindgen]
+pub struct WfcWebBuilder {
+    image: Option<image::RgbaImage>,
+    processor_config: Option<wfc_lib::preprocessor::ProcessorConfig>,
+    wfc_data: Option<wfc_lib::preprocessor::WfcData>,
+    output_dims: Option<UVec2>,
+    // TODO: remove importance of order: option 1: everything including (pixel scale and tile_size) are options, set with defaults when ran
+    tile_size: usize,
+    output_image: Option<image::RgbaImage>,
+}
+
+
+const TILE_SIZE_DEFAULT: usize = 2;
+// TODO: proc macro / derive macro to generate these builder functions and
+// set mutually exclusive fields
+// also maybe assert functions?
+#[wasm_bindgen]
+impl WfcWebBuilder {
+    fn setup() -> Self {
+        return Self {
+            tile_size: TILE_SIZE_DEFAULT,
+            ..Default::default()
+        };
+    }
+    fn new_from_image(image: image::RgbaImage) -> Self {
+        let mut this = Self::setup();
+        this.image = Some(image);
+        this.processor_config = Some(wfc_lib::preprocessor::ProcessorConfig::default());
+        return this;
+    }
+    fn load_image_from_bytes(raw_data: &[u8]) -> image::RgbaImage {
+        let reader = image::io::Reader::new(std::io::Cursor::new(raw_data))
+            .with_guessed_format()
+            .expect("Cursor io never fails");
+        let image = reader.decode().unwrap().to_rgba8();
+        return image;
+    }
+
+    pub fn new_from_image_bytes(raw_data: &[u8]) -> Self {
+        let image = Self::load_image_from_bytes(raw_data);
+        return Self::new_from_image(image);
+    }
+
+    pub fn with_output_dimensions(mut self, x: u32, y: u32) -> Self {
+        self.output_dims = Some(UVec2 { x, y });
+        return self;
+    }
+    pub fn with_tile_size(mut self, tile_size: usize) -> Self {
+        assert!(tile_size != 0, "tile size cannot be zero");
+        // if from patterns
+        if let Some(wfcdata) = &self.wfc_data {
+            for pattern in &wfcdata.patterns {
+                // .expect("wfc_data size should be set before patterns")
+                assert!(
+                    pattern.len() == tile_size.pow(2),
+                    "pattern size: {} should match tile size squared: {}",
+                    pattern.len(),
+                    tile_size.pow(2),
+                );
+            }
+        }
+        self.tile_size = tile_size;
+        return self;
+    }
+    // TODO: make PatternsBuilder that has FromImage and FromPatterns variants?
+    pub fn wrap(mut self) -> Self {
+        self.processor_config.as_mut().unwrap().wrap = true;
+        return self;
+    }
+
+    pub fn wang(mut self) -> Self {
+        self.processor_config.as_mut().unwrap().wang = true;
+        return self;
+    }
+
+    pub fn wang_flip(mut self) -> Self {
+        self.processor_config.as_mut().unwrap().wang_flip = true;
+        return self;
+    }
+
+    fn get_patterns(&self) -> &Vec<Pattern> {
+        return &self.wfc_data.as_ref().unwrap().patterns;
+    }
+    fn get_adjacency_rules(&self) -> &wfc_lib::adjacency_rules::AdjacencyRules {
+        return &self.wfc_data.as_ref().unwrap().adjacency_rules;
+    }
+    fn get_tile_frequencies(&self) -> &Vec<usize> {
+        return &self.wfc_data.as_ref().unwrap().tile_frequencies;
+    }
+    pub fn process_image(&mut self) {
+        let mut processor = wfc_lib::preprocessor::PreProcessor::new(
+            self.image.as_ref().expect("Image is set"),
+            self.tile_size,
+            self.processor_config
+                .as_ref()
+                .expect("ProcessorConfig is set")
+                .clone(),
+        );
+        self.wfc_data = Some(processor.process());
+    }
+
+    fn build(&mut self) -> (Model,Vec<Pattern>) {
+        self.process_image();
+        let model = Model::new(
+            // TODO: move actual values from wfc_data
+            self.get_adjacency_rules().clone(),
+            self.get_tile_frequencies().clone(),
+            // TODO: pass tile size and output dims to model
+            // and let it figure out the rest
+            self.output_dims.unwrap() / self.tile_size as u32,
+        );
+        // TODO: remove clone of patterns
+        // may require making all &mut self into mut self
+        return (model,self.wfc_data.as_ref().unwrap().patterns.clone());
+    }
+}
 fn rgba_f32_to_u8(a: f32) -> u8 {
     return (a * 255.0) as u8;
 }
@@ -291,3 +358,59 @@ pub fn blend_rgba(a: [u8; 4], b: [u8; 4], factor: f32) -> [u8; 4] {
     ]
     .map(rgba_f32_to_u8);
 }
+// #[allow(unused)]
+// #[wasm_bindgen]
+// pub async fn run_celtic() {
+//     let image = include_bytes!("../../inputs/celtic.png");
+//     WfcWindow::new(glam::UVec2::splat(256), 32).await.play(
+//         Wfc::new_from_image_bytes(image)
+//             .with_tile_size(32)
+//             .with_output_dimensions(256, 256)
+//             .wang()
+//             .wang_flip(),
+//     );
+// }
+//
+// #[allow(unused)]
+// #[wasm_bindgen]
+// pub async fn run_dual() {
+//     WfcWindow::new(glam::UVec2::splat(256), 32).await.play(
+//         Wfc::new_from_image_path("./inputs/dual.png")
+//             .with_tile_size(32)
+//             .with_output_dimensions(256, 256)
+//             .wang(),
+//     );
+// }
+//
+// #[allow(unused)]
+// async fn render_celtic_patterns() {
+//     let mut win = WfcWindow::new(glam::UVec2::splat(128), 64).await;
+//     let image = image::io::Reader::open("./inputs/celtic.png")
+//         .unwrap()
+//         .decode()
+//         .unwrap()
+//         .to_rgba8();
+//     let mut processor = wfc_lib::preprocessor::PreProcessor::new(
+//         &image,
+//         64,
+//         wfc_lib::preprocessor::ProcessorConfig::default(),
+//     );
+//     let data = processor.process();
+//     for (id, &loc) in processor.tiles.iter().enumerate() {
+//         win.render_cell(loc / 64, data.patterns[id].clone());
+//     }
+//     loop {
+//         win.render();
+//     }
+// }
+//
+// #[allow(unused)]
+// async fn render_celtic() {
+//     let mut win = WfcWindow::new(glam::UVec2::splat(128), 64).await;
+//     let image_bytes = include_bytes!("../../inputs/celtic.png");
+//     let image = Wfc::load_image_from_bytes(image_bytes);
+//     win.update(image.pixels());
+//     loop {
+//         win.render();
+//     }
+// }
