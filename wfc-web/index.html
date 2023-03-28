@@ -87,13 +87,24 @@
         let display = await window.wasm.WfcWindow.new();
         controller = window.wasm.WfcController.init(display);
         togglePlaying = () => controller.toggle_playing();
+          window.addEventListener("resize", (e) => {
+            let canvas_container = document.getElementById("canvas-container");
+              let r = window.devicePixelRatio || 1;
+              let w = canvas_container.clientWidth;
+              let h = canvas_container.clientHeight;
+              // NOTE: scaling by r converts w,h into 
+              // winit PhysicalSize units
+              w = Math.round(w * r);
+              h = Math.round(h * r);
+              controller.resize_canvas(w,h);
+          });
         display.start_event_loop();
         console.log("wasm loaded");
       }
       window.onload = init;
     </script>
 
-    <div id="board" class="flex h-screen w-screen">
+    <div id="board" class="flex flex-col md:flex-row h-screen w-screen">
       <!-- TODO: display menu on side when w > h and below when h > w -->
       <div id="menu" class="flex-shrink-0 bg-gray-200 w-48 h-screen">
         <div id="presets" class="dropdown relative">

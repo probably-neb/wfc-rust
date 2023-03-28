@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use glam::UVec2;
 use image::Rgba;
 use pixels::Pixels;
@@ -7,12 +9,11 @@ use wfc_lib::{preprocessor::Pattern, wfc::Model};
 use winit::platform::web::WindowBuilderExtWebSys;
 use winit::window::Window;
 
-// const TILE_SIZE_DEFAULT: usize = 2;
-// const PIXEL_SCALE_DEFAULT: u32 = 2;
+const TILE_SIZE_DEFAULT: usize = 2;
 
 fn main() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-    console_log::init_with_level(log::Level::Trace).expect("error initializing logger");
+    console_log::init_with_level(log::Level::Warn).expect("error initializing logger");
     // TODO: specifying seed for random weighting of tiles
     // TODO: render preprocessor steps
 }
@@ -28,7 +29,6 @@ fn main() {
 //     )
 // }
 
-// TODO: come up with a better name for this
 #[wasm_bindgen]
 pub struct WfcData {
     model: Model,
@@ -85,52 +85,46 @@ impl WfcWindow {
         let event_loop = self.event_loop.take().unwrap();
 
         event_loop.run(move |event, _, control_flow| {
-            if let winit::event::Event::UserEvent(WfcEvent::StartWfc(data)) = event {
-                // load initial state of model
-                let (out_x, out_y) = data.output_dimensions.into();
-                self.pixels.resize_buffer(out_x, out_y);
-                // TODO: come up with a nicer way to set the initial state
-                let updated_cells = data.model.iter_cells().map(|c| c.loc).collect();
-                update_frame_buffer(&mut self.pixels, &data, updated_cells);
-                self.window.request_redraw();
-
-                cur_model_data.replace(data);
-                return;
-            }
-            // TODO: handle window resizing by resizing pixels surface_texture
-            if cur_model_data.is_none() {
-                return;
-            }
-            if let Some(data) = &mut cur_model_data {
-                match event {
-                    winit::event::Event::UserEvent(WfcEvent::TogglePlaying) => {
-                        log::warn!("toggle playing");
+            match event {
+                winit::event::Event::UserEvent(WfcEvent::StartWfc(data)) => {
+                    // load initial state of model
+                    let (out_x, out_y) = data.output_dimensions.into();
+                    self.pixels.resize_buffer(out_x, out_y);
+                    // TODO: come up with a nicer way to set the initial state
+                    // that doesn't rerender the completely merged pattern 
+                    // for each cell
+                    let updated_cells = data.model.iter_cells().map(|c| c.loc).collect();
+                    update_frame_buffer(&mut self.pixels, &data, updated_cells);
+                    self.window.request_redraw();
+                    cur_model_data.replace(data);
+                }
+                winit::event::Event::UserEvent(WfcEvent::CanvasResize(size)) => {
+                    self.window.set_inner_size(size);
+                    // TODO: catch this error
+                    let _ = self.pixels.resize_surface(size.width, size.height);
+                }
+                winit::event::Event::UserEvent(WfcEvent::TogglePlaying) => {
+                    if cur_model_data.is_some() {
                         playing = !playing;
                     }
-                    winit::event::Event::RedrawRequested(_window_id) => {
-                        let mut exit = false;
+                }
+                winit::event::Event::RedrawRequested(_window_id) => {
+                    if let Some(data) = &mut cur_model_data {
 
-                        if !done(&data.model) {
+                        if playing && !done(&data.model) {
                             let updated_cells = data.model.step();
-
                             update_frame_buffer(&mut self.pixels, &data, updated_cells);
-                            if let Err(err) = self.pixels.render() {
+                            let err = self.pixels.render();
+                            self.window.request_redraw();
+
+                            if let Err(err) = err {
                                 log::error!("pixels.render() failed: {err}");
-                                exit = true;
+                                *control_flow = winit::event_loop::ControlFlow::Exit;
                             }
-                        } else {
-                            exit = true;
-                        }
-                        if exit {
-                            *control_flow = winit::event_loop::ControlFlow::Exit;
-                            return;
                         }
                     }
-                    _ => {}
                 }
-                if playing && !done(&data.model) {
-                    self.window.request_redraw();
-                }
+                _ => {}
             }
         });
     }
@@ -139,7 +133,6 @@ impl WfcWindow {
 fn update_frame_buffer(pixels: &mut Pixels, data: &WfcData, mut updated_cells: Vec<UVec2>) {
     // FIXME: figure out a better way of keeping track of updated cells other than
     // in models state
-
 
     let WfcData {
         model,
@@ -189,7 +182,6 @@ pub struct WfcWebBuilder {
     tile_size: usize,
 }
 
-const TILE_SIZE_DEFAULT: usize = 2;
 // TODO: proc macro / derive macro to generate these builder functions and
 // set mutually exclusive fields
 // also maybe assert functions?
@@ -313,9 +305,14 @@ impl WfcWebBuilder {
 enum WfcEvent {
     TogglePlaying,
     StartWfc(WfcData),
+    CanvasResize(winit::dpi::PhysicalSize<u32>),
 }
 
 #[wasm_bindgen]
+/// The public interface between the javascript ui and the winit
+/// event loop controlling the canvas displaying wfc for the current model
+///
+/// * `event_loop_proxy`: the link to the event_loop that we can send messages too
 pub struct WfcController {
     event_loop_proxy: winit::event_loop::EventLoopProxy<WfcEvent>,
 }
@@ -339,6 +336,13 @@ impl WfcController {
 
     pub fn start_wfc(&self, data: WfcData) {
         let _ = self.event_loop_proxy.send_event(WfcEvent::StartWfc(data));
+    }
+
+    pub fn resize_canvas(&self, w: u32, h: u32) {
+        let size = winit::dpi::PhysicalSize::new(w, h);
+        let _ = self
+            .event_loop_proxy
+            .send_event(WfcEvent::CanvasResize(size));
     }
 }
 
