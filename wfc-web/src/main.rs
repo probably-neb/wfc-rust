@@ -85,11 +85,13 @@ impl WfcWindow {
         let event_loop = self.event_loop.take().unwrap();
 
         event_loop.run(move |event, _, control_flow| {
-            if let winit::event::Event::UserEvent(WfcEvent::StartWfc(mut data)) = event {
+            if let winit::event::Event::UserEvent(WfcEvent::StartWfc(data)) = event {
                 // load initial state of model
                 let (out_x, out_y) = data.output_dimensions.into();
                 self.pixels.resize_buffer(out_x, out_y);
-                update_frame_buffer(&mut self.pixels, &mut data);
+                // TODO: come up with a nicer way to set the initial state
+                let updated_cells = data.model.iter_cells().map(|c| c.loc).collect();
+                update_frame_buffer(&mut self.pixels, &data, updated_cells);
                 self.window.request_redraw();
 
                 cur_model_data.replace(data);
@@ -109,9 +111,9 @@ impl WfcWindow {
                         let mut exit = false;
 
                         if !done(&data.model) {
-                            data.model.step();
+                            let updated_cells = data.model.step();
 
-                            update_frame_buffer(&mut self.pixels, data);
+                            update_frame_buffer(&mut self.pixels, &data, updated_cells);
                             if let Err(err) = self.pixels.render() {
                                 log::error!("pixels.render() failed: {err}");
                                 exit = true;
@@ -134,12 +136,10 @@ impl WfcWindow {
     }
 }
 
-fn update_frame_buffer(pixels: &mut Pixels, data: &mut WfcData) {
+fn update_frame_buffer(pixels: &mut Pixels, data: &WfcData, mut updated_cells: Vec<UVec2>) {
     // FIXME: figure out a better way of keeping track of updated cells other than
     // in models state
-    // could easily have model.step() return the list of updated tiles
-    // and pass that to this function
-    // also will fix the frame not being updated completely when first loaded
+
 
     let WfcData {
         model,
@@ -151,7 +151,7 @@ fn update_frame_buffer(pixels: &mut Pixels, data: &mut WfcData) {
 
     let frame = pixels.get_frame_mut();
 
-    while let Some(cell_loc) = model.updated_cells.pop() {
+    while let Some(cell_loc) = updated_cells.pop() {
         let cell = model.get_cell(cell_loc).unwrap();
         // TODO: inline cell.render here
         let cell_pattern = cell.render(patterns, tile_size);
@@ -210,7 +210,7 @@ impl WfcWebBuilder {
     fn load_image_from_bytes(raw_data: &[u8]) -> image::RgbaImage {
         // TODO: consider whether decoding here is really necessary
         //
-        // Assuming it is so that Image figures out how to give me the vec of 
+        // Assuming it is so that Image figures out how to give me the vec of
         // pixels I want
         let reader = image::io::Reader::new(std::io::Cursor::new(raw_data))
             .with_guessed_format()
@@ -257,7 +257,7 @@ impl WfcWebBuilder {
     }
 
     pub fn wang_flip(mut self) -> Self {
-        // TODO: test whether all wangs are wang-flips and delete this method 
+        // TODO: test whether all wangs are wang-flips and delete this method
         // if they are
         self.processor_config.as_mut().unwrap().wang_flip = true;
         return self;
@@ -328,9 +328,7 @@ impl WfcController {
             .as_ref()
             .expect("event loop was created")
             .create_proxy();
-        return Self {
-            event_loop_proxy,
-        };
+        return Self { event_loop_proxy };
     }
 
     pub fn toggle_playing(&self) {

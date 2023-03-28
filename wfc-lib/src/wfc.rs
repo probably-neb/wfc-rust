@@ -139,7 +139,7 @@ pub struct Model {
     // dims: UVec2,
     wave: Vec<TileRemovalEvent>,
     pub remaining_uncollapsed: u32,
-    pub updated_cells: Vec<UVec2>,
+    updated_cells: Vec<UVec2>,
     // tile_size: usize,
 }
 
@@ -161,8 +161,10 @@ impl Model {
             vals.push(cell);
         }
         let board = Board { grid, vals };
+        let updated_cells = Vec::with_capacity(num_cells as usize);
         return Self {
             adjacency_rules,
+            updated_cells,
             // tile_frequencies,
             board,
             // dims,
@@ -261,13 +263,13 @@ impl Model {
     }
 
     /// steps the model one iteration by either collapsing or propogating TileRemovalEvents
-    pub fn step(&mut self) {
+    pub fn step(&mut self) -> Vec<UVec2> {
         // no tiles left to collapse -> done
         if self.remaining_uncollapsed == 0 {
             for cell in self.iter_cells() {
                 assert!(cell.domain.allowed_iter().count() == 1);
             }
-            return;
+            return Vec::new();
         }
         // stack empty -> need to collapse a tile
         if self.wave.is_empty() {
@@ -275,6 +277,10 @@ impl Model {
         } else {
             self.propogate();
         }
+
+        let mut updated_cells: Vec<UVec2> = Vec::with_capacity(self.updated_cells.len());
+        updated_cells.append(&mut self.updated_cells);
+        return updated_cells;
     }
 
     pub fn iter_cells(&self) -> impl Iterator<Item = &Cell> {
