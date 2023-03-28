@@ -1,3 +1,4 @@
+use std::iter::zip;
 use std::rc::Rc;
 
 use glam::UVec2;
@@ -5,6 +6,7 @@ use image::Rgba;
 use pixels::Pixels;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+use wfc_lib::tile::TileId;
 use wfc_lib::{preprocessor::Pattern, wfc::Model};
 use winit::platform::web::WindowBuilderExtWebSys;
 use winit::window::Window;
@@ -79,19 +81,21 @@ impl WfcWindow {
         let mut cur_model_data: Option<WfcData> = None;
 
         // TODO: create done method in model
-        let mut done = |m: &Model| m.remaining_uncollapsed == 0;
+        let done = |m: &Model| m.remaining_uncollapsed == 0;
         let mut playing = true;
 
         let event_loop = self.event_loop.take().unwrap();
 
         event_loop.run(move |event, _, control_flow| {
             match event {
+                // TODO: separate into loadwfc and startwfc events
+                // and load preset on page load
                 winit::event::Event::UserEvent(WfcEvent::StartWfc(data)) => {
                     // load initial state of model
                     let (out_x, out_y) = data.output_dimensions.into();
-                    self.pixels.resize_buffer(out_x, out_y);
+                    let _ = self.pixels.resize_buffer(out_x, out_y);
                     // TODO: come up with a nicer way to set the initial state
-                    // that doesn't rerender the completely merged pattern 
+                    // that doesn't rerender the completely merged pattern
                     // for each cell
                     let updated_cells = data.model.iter_cells().map(|c| c.loc).collect();
                     update_frame_buffer(&mut self.pixels, &data, updated_cells);
@@ -99,6 +103,7 @@ impl WfcWindow {
                     cur_model_data.replace(data);
                 }
                 winit::event::Event::UserEvent(WfcEvent::CanvasResize(size)) => {
+                    // TODO: remove border around pixels buffer
                     self.window.set_inner_size(size);
                     // TODO: catch this error
                     let _ = self.pixels.resize_surface(size.width, size.height);
@@ -110,18 +115,17 @@ impl WfcWindow {
                 }
                 winit::event::Event::RedrawRequested(_window_id) => {
                     if let Some(data) = &mut cur_model_data {
-
                         if playing && !done(&data.model) {
                             let updated_cells = data.model.step();
                             update_frame_buffer(&mut self.pixels, &data, updated_cells);
-                            let err = self.pixels.render();
-                            self.window.request_redraw();
 
-                            if let Err(err) = err {
-                                log::error!("pixels.render() failed: {err}");
-                                *control_flow = winit::event_loop::ControlFlow::Exit;
-                            }
                         }
+                        let err = self.pixels.render();
+                        if let Err(err) = err {
+                            log::error!("pixels.render() failed: {err}");
+                            *control_flow = winit::event_loop::ControlFlow::Exit;
+                        }
+                        self.window.request_redraw();
                     }
                 }
                 _ => {}
@@ -146,9 +150,44 @@ fn update_frame_buffer(pixels: &mut Pixels, data: &WfcData, mut updated_cells: V
 
     while let Some(cell_loc) = updated_cells.pop() {
         let cell = model.get_cell(cell_loc).unwrap();
-        // TODO: inline cell.render here
-        let cell_pattern = cell.render(patterns, tile_size);
+        // TODO: find more efficient way of determining whether cell
+        // has a single allowed pattern left
+        // this may require some sort of restructure of cell.domain
+        // as currently figuring out if it is the last remaining pattern
+        // requires iterating through all the patterns and cell.collapsed is
+        // not set
 
+        // per-pixel weighted average of the allowed patterns for this cell
+        let cell_pattern = if let Some(final_pattern) = cell.collapsed_to {
+            patterns[final_pattern].to_owned()
+        } else {
+            let mut counts = vec![[0; 4]; tile_size * tile_size];
+            let allowed_tile_ids = cell.domain.allowed_tile_ids();
+
+            for pattern_id in cell.domain.allowed_tile_ids() {
+                let weight = cell.probability_dict.counts[pattern_id];
+                for (i, px) in patterns[pattern_id].iter().enumerate() {
+                    counts[i][0] += px[0] as usize * weight;
+                    counts[i][1] += px[1] as usize * weight;
+                    counts[i][2] += px[2] as usize * weight;
+                    // new_pattern[i][3] += px[3] as usize* weight;
+                }
+            }
+
+            let mut new_pattern: Pattern = vec![[0; 4]; tile_size * tile_size];
+            let total_weight = cell.probability_dict.total_count;
+
+            for (i, c) in counts.iter().enumerate() {
+                new_pattern[i][0] = (c[0] / total_weight) as u8;
+                new_pattern[i][1] = (c[1] / total_weight) as u8;
+                new_pattern[i][2] = (c[2] / total_weight) as u8;
+                // new_pattern[i][3] = (px[3] / total_weight;
+                new_pattern[i][3] = 255;
+            }
+            new_pattern
+        };
+
+        // TODO: refactor to copy_from_slice rows at a time instead of pixels
         let frame_coord = cell_loc * tile_size as u32;
         for x in 0..tile_size {
             for y in 0..tile_size {
@@ -158,12 +197,12 @@ fn update_frame_buffer(pixels: &mut Pixels, data: &WfcData, mut updated_cells: V
                     y: y as u32,
                 } + frame_coord;
                 let idx = 4 * ((frame_idx.y * output_dimensions.x) + frame_idx.x) as usize;
-                // let cell_pixel = pattern[y * self.tile_size + x].0;
+
                 let frame_pixel = frame
                     .get_mut(idx..idx + 4)
                     .unwrap_or_else(|| panic!("pixel at {:?} should be in bounds but loc {cell_loc:?} and frame cell {frame_idx:?} aren't in bounds", frame_idx));
 
-                let cell_pixel: [u8; 4] = cell_pattern[y * tile_size + x];
+                let cell_pixel: [u8; 4] = cell_pattern[y * tile_size + x].map(|c| c as u8);
 
                 frame_pixel.copy_from_slice(&cell_pixel);
             }
@@ -309,7 +348,7 @@ enum WfcEvent {
 }
 
 #[wasm_bindgen]
-/// The public interface between the javascript ui and the winit
+/// The public interface between the javascript frontend and the winit
 /// event loop controlling the canvas displaying wfc for the current model
 ///
 /// * `event_loop_proxy`: the link to the event_loop that we can send messages too

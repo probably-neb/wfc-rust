@@ -50,7 +50,7 @@ impl Cell {
         let mut rng = rand::thread_rng();
         return self
             .domain
-            .allowed_iter()
+            .allowed_tile_ids()
             .choose(&mut rng)
             .expect("cell has possible tiles");
     }
@@ -267,7 +267,7 @@ impl Model {
         // no tiles left to collapse -> done
         if self.remaining_uncollapsed == 0 {
             for cell in self.iter_cells() {
-                assert!(cell.domain.allowed_iter().count() == 1);
+                assert!(cell.domain.allowed_tile_ids().count() == 1);
             }
             return Vec::new();
         }
@@ -350,9 +350,9 @@ impl IndexMut<IVec2> for Board {
 
 #[derive(Debug, Clone)]
 pub struct ProbabilityDict {
-    counts: IdMap<usize>,
+    pub counts: IdMap<usize>,
     total_shannons: f32,
-    total_count: usize,
+    pub total_count: usize,
 }
 
 impl ProbabilityDict {
@@ -490,12 +490,12 @@ mod test {
                 if let Some(adj_cell) = model.board.get_cell(adjacent_cell_loc) {
                     let mut cell_domain_in_dir: Vec<usize> = cell
                         .domain
-                        .allowed_iter()
+                        .allowed_tile_ids()
                         .flat_map(|tile_id| model.adjacency_rules.enabled_by(tile_id, dir))
                         .collect();
                     cell_domain_in_dir.sort();
                     cell_domain_in_dir.dedup();
-                    for adj_allowed_tile_id in adj_cell.domain.allowed_iter() {
+                    for adj_allowed_tile_id in adj_cell.domain.allowed_tile_ids() {
                         assert!(cell_domain_in_dir.contains(&adj_allowed_tile_id), "cell at {cell_loc:?} with domain {:?} in direction {dir:?} has neighbor at {adjacent_cell_loc} with possible tile {} that should not be allowed", cell_domain_in_dir.iter().map(|&tile_id| CHARS[tile_id]).collect::<Vec<&str>>(), CHARS[adj_allowed_tile_id]);
                     }
                 }

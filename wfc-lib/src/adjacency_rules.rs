@@ -22,7 +22,6 @@ impl AdjacencyRules {
         return self.map.len();
     }
 
-    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -136,7 +135,10 @@ impl EnablerDict {
         }
     }
 
-    pub fn allowed_iter(&self) -> impl Iterator<Item = TileId> + '_ {
+    // TODO: remove unused functions and make sure the ones that are used 
+    // aren't doing unnecessary clones
+
+    pub fn allowed_tile_ids(&self) -> impl Iterator<Item = TileId> + '_ {
         return self
             .enablers
             .iter()
@@ -144,7 +146,7 @@ impl EnablerDict {
             .filter_map(|(idx, b)| b.map(|_| idx));
     }
 
-    pub fn filter_allowed<'a, T>(&'a self, other: &'a Vec<T>) -> impl Iterator<Item = T> + '_
+    pub fn filter_allowed<'a, T>(&'a self, other: &'a Vec<T>) -> impl Iterator<Item = &'a T> + '_
     where
         T: Clone,
     {
@@ -152,12 +154,12 @@ impl EnablerDict {
         return self.iter_allowed(other).flatten();
     }
 
-    pub fn iter_allowed<'a, T>(&'a self, other: &'a Vec<T>) -> impl Iterator<Item = Option<T>> + '_
+    pub fn iter_allowed<'a, T>(&'a self, other: &'a Vec<T>) -> impl Iterator<Item = Option<&'a T>> + '_
     where
         T: Clone,
     {
         assert_eq!(self.enablers.len(), other.len());
-        return zip(&self.enablers, other).map(|(b, v)| b.map(|_| v.clone()));
+        return zip(&self.enablers, other).map(|(b, v)| b.map(|_| v));
     }
 
     pub fn filter_allowed_enumerate<'a, T>(
@@ -172,6 +174,7 @@ impl EnablerDict {
             .enumerate()
             .filter_map(|(i, (&b, v))| b.map(|_| (i, v.clone())));
     }
+
 
     /// Remove all enabled/allowable/possible tiles except one (the lone survivor!)
     pub fn remove_all_but(&mut self, marcus_luttrell: TileId) -> Vec<TileId> {
