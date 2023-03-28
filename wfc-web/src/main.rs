@@ -26,14 +26,13 @@ fn main() {
 #[wasm_bindgen]
 pub async fn run_wang_tile(bytes: &[u8]) {
     log::info!("run_wang_tile");
-    WfcWindow::new(glam::UVec2::splat(256), 32).await.play(
+    WfcWindow::new(256, 256, 32).await.play(
         WfcWebBuilder::new_from_image_bytes(&bytes)
             .with_tile_size(32)
             .with_output_dimensions(256, 256)
             .wang(),
     );
 }
-
 
 // FIXME: get simple patterns working again
 // #[allow(unused)]
@@ -46,17 +45,25 @@ pub async fn run_wang_tile(bytes: &[u8]) {
 //     )
 // }
 
+#[wasm_bindgen]
 pub struct WfcWindow {
-    window: Rc<Window>,
+    window: Window,
     pixels: Pixels,
     tile_size: usize, // TODO: remove tile_size from this struct and use the variable used in self.wfc
     window_dimensions: UVec2,
-    event_loop: Option<winit::event_loop::EventLoop<()>>,
+    event_loop: Option<winit::event_loop::EventLoop<WfcEvent>>,
 }
 
+// TODO: merge this with WfcWebBuilder
+#[wasm_bindgen]
 impl WfcWindow {
-    pub async fn new(window_dimensions: UVec2, tile_size_var: usize) -> Self {
-        let event_loop = winit::event_loop::EventLoop::new();
+    // TODO: move pixels setup to run function and remove output_dimensions and tile_size params
+    pub async fn new(
+        output_dimensions_x: u32,
+        output_dimensions_y: u32,
+        tile_size_var: usize,
+    ) -> Self {
+        let event_loop = winit::event_loop::EventLoopBuilder::<WfcEvent>::with_user_event().build();
         let canvas = web_sys::window()
             .and_then(|win| win.document())
             .and_then(|doc| doc.get_element_by_id("wfc"))
@@ -71,51 +78,47 @@ impl WfcWindow {
         };
         log::info!("window created and attached to canvas");
 
-        let window = Rc::new(window);
+        // let window = Rc::new(window);
 
         // FIXME: set clippy target arch to wasm32 to avoid
         // warnings and having to use this block to avoid them
-        #[cfg(target_arch = "wasm32")]
-        {
-            // Retrieve current width and height dimensions of browser client window
-            let get_window_size = || {
-                let client_window = web_sys::window().unwrap();
-                winit::dpi::LogicalSize::new(
-                    client_window.inner_width().unwrap().as_f64().unwrap(),
-                    client_window.inner_height().unwrap().as_f64().unwrap(),
-                )
-            };
+        // #[cfg(target_arch = "wasm32")]
+        // {
+        // Retrieve current width and height dimensions of browser client window
+        // let get_window_size = || {
+        //     let client_window = web_sys::window().unwrap();
+        //     winit::dpi::LogicalSize::new(
+        //         client_window.inner_width().unwrap().as_f64().unwrap(),
+        //         client_window.inner_height().unwrap().as_f64().unwrap(),
+        //     )
+        // };
 
-            let window = Rc::clone(&window);
+        // let window = Rc::clone(&window);
 
-            // Initialize winit window with current dimensions of browser client
-            // window.set_inner_size(get_window_size());
+        // Initialize winit window with current dimensions of browser client
+        // window.set_inner_size(get_window_size());
 
-            let client_window = web_sys::window().unwrap();
+        // let client_window = web_sys::window().unwrap();
 
-            // Listen for resize event on browser client. Adjust winit window dimensions
-            // on event trigger
-            // let closure =
-            //     wasm_bindgen::closure::Closure::wrap(Box::new(move |_e: web_sys::Event| {
-            //         let size = get_window_size();
-            //         window.set_inner_size(size)
-            //     }) as Box<dyn FnMut(_)>);
-            // client_window
-            //     .add_event_listener_with_callback("resize", closure.as_ref().unchecked_ref())
-            //     .unwrap();
-            // closure.forget();
-        }
+        // Listen for resize event on browser client. Adjust winit window dimensions
+        // on event trigger
+        // let closure =
+        //     wasm_bindgen::closure::Closure::wrap(Box::new(move |_e: web_sys::Event| {
+        //         let size = get_window_size();
+        //         window.set_inner_size(size)
+        //     }) as Box<dyn FnMut(_)>);
+        // client_window
+        //     .add_event_listener_with_callback("resize", closure.as_ref().unchecked_ref())
+        //     .unwrap();
+        // closure.forget();
+        // }
 
         let size = window.inner_size();
-        let surface_texture = pixels::SurfaceTexture::new(
-            size.width,
-            size.height,
-            window.as_ref(),
-        );
+        let surface_texture = pixels::SurfaceTexture::new(size.width, size.height, &window);
         log::info!("surface texture built");
 
         let pixels =
-            pixels::PixelsBuilder::new(window_dimensions.x, window_dimensions.y, surface_texture)
+            pixels::PixelsBuilder::new(output_dimensions_x, output_dimensions_y, surface_texture)
                 .blend_state(pixels::wgpu::BlendState::REPLACE)
                 .build_async()
                 .await
@@ -126,15 +129,15 @@ impl WfcWindow {
             pixels,
             tile_size: tile_size_var,
             event_loop: Some(event_loop),
-            window_dimensions,
+            window_dimensions: UVec2 {
+                x: output_dimensions_x,
+                y: output_dimensions_y,
+            },
         };
     }
 
     fn update_cell_in_frame_buffer(&mut self, cell: &Cell, patterns: &Vec<Pattern>) {
-        self.render_cell(
-            cell.loc,
-            cell.render(patterns, self.tile_size),
-        );
+        self.render_cell(cell.loc, cell.render(patterns, self.tile_size));
     }
 
     fn update_frame_buffer(&mut self, model: &mut Model, patterns: &Vec<Pattern>) {
@@ -144,14 +147,19 @@ impl WfcWindow {
         }
     }
 
+    pub fn get_controller(&self) -> WfcController {
+        let proxy = self.event_loop.as_ref().unwrap().create_proxy();
+        return WfcController { event_loop_proxy: proxy };
+    }
+
     pub fn play(mut self, mut wfc_builder: WfcWebBuilder) {
-        // TODO: create surface texture and pixels buffer here 
+        // TODO: create surface texture and pixels buffer here
         // in order to allow running again with new model
 
-        // TODO: consider moving WFCBuilder into web crate and exposing 
+        // TODO: consider moving WFCBuilder into web crate and exposing
         // it via wasm_bindgen so that it becomes the js api
 
-        let (mut model,mut patterns) = wfc_builder.build();
+        let (mut model, mut patterns) = wfc_builder.build();
 
         // load initial state of model
         for cell in model.iter_cells() {
@@ -159,32 +167,38 @@ impl WfcWindow {
         }
         let event_loop = self.event_loop.take().unwrap();
         let mut done = |m: &Model| m.remaining_uncollapsed == 0;
+        let mut playing = true;
         event_loop.run(move |event, _, control_flow| {
             // TODO: handle window resizing
 
+            if let winit::event::Event::UserEvent(WfcEvent::TogglePlaying) = event {
+                log::warn!("toggle playing");
+                playing = !playing;
+            }
             if let winit::event::Event::RedrawRequested(_window_id) = event {
-                self.update_frame_buffer(&mut model, &patterns);
                 let mut exit = false;
-                if let Err(err) = self.pixels.render() {
-                    log::error!("pixels.render() failed: {err}");
-                    exit = true;
+
+                if !done(&model) {
+                    model.step();
+                    self.update_frame_buffer(&mut model, &patterns);
+                    if let Err(err) = self.pixels.render() {
+                        log::error!("pixels.render() failed: {err}");
+                        exit = true;
+                    }
                 }
                 if exit {
                     *control_flow = winit::event_loop::ControlFlow::Exit;
                     return;
                 }
             }
-            else {
-                log::info!("event: {:?}", event);
-            }
-            if !done(&model) {
-                model.step();
+            if playing && !done(&model) {
                 self.window.request_redraw();
             }
+
         });
     }
 
-    pub fn render_cell(&mut self, cell_coord: UVec2, pattern: Pattern) {
+    fn render_cell(&mut self, cell_coord: UVec2, pattern: Pattern) {
         let frame = self.pixels.get_frame_mut();
         // let pattern = domain.filter_allowed(&self.patterns).next().unwrap();
         let frame_coord = cell_coord * self.tile_size as u32;
@@ -205,11 +219,11 @@ impl WfcWindow {
         }
     }
 
-    pub fn render(&self) {
+    fn render(&self) {
         self.pixels.render().unwrap();
     }
 
-    pub fn update<'a>(&mut self, image: impl Iterator<Item = &'a Rgba<u8>>) {
+    fn update<'a>(&mut self, image: impl Iterator<Item = &'a Rgba<u8>>) {
         let frame = self.pixels.get_frame_mut();
         for (cell_pixel, frame_pixel) in image.zip(frame.chunks_exact_mut(4)) {
             frame_pixel.copy_from_slice(&cell_pixel.0);
@@ -228,7 +242,6 @@ pub struct WfcWebBuilder {
     tile_size: usize,
     output_image: Option<image::RgbaImage>,
 }
-
 
 const TILE_SIZE_DEFAULT: usize = 2;
 // TODO: proc macro / derive macro to generate these builder functions and
@@ -319,7 +332,7 @@ impl WfcWebBuilder {
         self.wfc_data = Some(processor.process());
     }
 
-    fn build(&mut self) -> (Model,Vec<Pattern>) {
+    fn build(&mut self) -> (Model, Vec<Pattern>) {
         self.process_image();
         let model = Model::new(
             // TODO: move actual values from wfc_data
@@ -331,9 +344,30 @@ impl WfcWebBuilder {
         );
         // TODO: remove clone of patterns
         // may require making all &mut self into mut self
-        return (model,self.wfc_data.as_ref().unwrap().patterns.clone());
+        return (model, self.wfc_data.as_ref().unwrap().patterns.clone());
     }
 }
+
+enum WfcEvent {
+    TogglePlaying,
+}
+
+#[wasm_bindgen]
+pub struct WfcController {
+    event_loop_proxy: winit::event_loop::EventLoopProxy<WfcEvent> ,
+}
+
+#[wasm_bindgen]
+impl WfcController {
+    pub fn toggle_playing(&self) {
+        // Ignore result.
+        // throws if event loop is not running, in which case do nothing
+        let _ = self.event_loop_proxy.send_event(WfcEvent::TogglePlaying);
+    }
+}
+
+
+
 fn rgba_f32_to_u8(a: f32) -> u8 {
     return (a * 255.0) as u8;
 }

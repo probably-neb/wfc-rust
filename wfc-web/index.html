@@ -8,6 +8,8 @@
 
   <body>
     <script>
+      let togglePlaying = () => {}
+
       function assert(condition, message = "") {
         if (!condition) {
           throw new Error("Failed Assertion:" + message);
@@ -35,20 +37,32 @@
           });
         return bytes;
       }
-      async function selectGame(game) {
+      async function playGame(game) {
       console.log("selectGame", game);
         assert(window.wasm !== undefined, "wasm not loaded");
         if (game == "simple_patterns") {
           window.wasm.run_simple_patterns();
         } else {
           const bytes = await wangTileBytes(game);
-          window.wasm.run_wang_tile(bytes);
+          let wfc_builder = window.wasm.WfcWebBuilder
+                  .new_from_image_bytes(bytes)
+                  .with_tile_size(32)
+                  .with_output_dimensions(256,256)
+                  .wang()
+            let wfc = await window.wasm.WfcWindow.new(256,256,32)
+              // TODO: wfc.play blocks so get event_loop_proxy 
+              // before starting and create function in js
+              // that sends custom play/pause events to the event loop
+              let controller = wfc.get_controller()
+              togglePlaying = () => controller.toggle_playing()
+              wfc.play(wfc_builder)
+              // render();
         }
       }
       async function init() {
         console.log("init");
         for (let button of document.querySelectorAll('[data-type="menu"]')) {
-          button.addEventListener("click", (e) => selectGame(button.value));
+          button.addEventListener("click", (e) => playGame(button.value));
         }
         function waitUntilDefined(value) {
           return new Promise((resolve) => {
@@ -83,9 +97,7 @@
             <button data-type="menu" value="dual">Dual</button>
           </li>
           <li>
-            <a href="#" class="block px-4 py-2 hover:bg-gray-300"
-              >Menu Item 1</a
-            >
+            <button onclick="togglePlaying()">Play/Pause</button>
           </li>
           <li>
             <a href="#" class="block px-4 py-2 hover:bg-gray-300"
