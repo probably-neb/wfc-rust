@@ -223,14 +223,13 @@ impl PreProcessor {
             Right => sub_img.view(ts_u32 - 1, 0, 1, ts_u32),
             Down => sub_img.view(0, ts_u32 - 1, ts_u32, 1),
         };
-        // sub_sub_img.to_image().save(format!("./edges/{side:?}_{:?}.png",sub_img.bounds())).unwrap();
         let mut edge: Vec<Rgba<u8>> = sub_sub_img.pixels().map(|(_, _, rgba)| rgba).collect();
-        if self.config.wang_flip {
-            match side {
-                Up | Left => (),
-                Down | Right => edge.reverse()
-            }
+        // if self.config.wang_flip {
+        match side {
+            Up | Left => (),
+            Down | Right => edge.reverse()
         }
+        // }
         return edge;
     }
 

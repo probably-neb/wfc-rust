@@ -8,12 +8,18 @@
 
   <body>
     <script>
-      let togglePlaying = () => {}
+      let controller = undefined;
+
+      let togglePlaying = () => {};
 
       function assert(condition, message = "") {
         if (!condition) {
           throw new Error("Failed Assertion:" + message);
         }
+      }
+      function togglePresetMenu() {
+        presetMenu = document.querySelector("#presets .dropdown-menu");
+        presetMenu.classList.toggle("hidden");
       }
       // TODO: non wang tiles
       // TODO: specifying settings in menu
@@ -38,25 +44,22 @@
         return bytes;
       }
       async function playGame(game) {
-      console.log("selectGame", game);
+        console.log("selectGame", game);
         assert(window.wasm !== undefined, "wasm not loaded");
         if (game == "simple_patterns") {
           window.wasm.run_simple_patterns();
         } else {
           const bytes = await wangTileBytes(game);
-          let wfc_builder = window.wasm.WfcWebBuilder
-                  .new_from_image_bytes(bytes)
-                  .with_tile_size(32)
-                  .with_output_dimensions(256,256)
-                  .wang()
-            let wfc = await window.wasm.WfcWindow.new(256,256,32)
-              // TODO: wfc.play blocks so get event_loop_proxy 
-              // before starting and create function in js
-              // that sends custom play/pause events to the event loop
-              let controller = wfc.get_controller()
-              togglePlaying = () => controller.toggle_playing()
-              wfc.play(wfc_builder)
-              // render();
+          let wfc = window.wasm.WfcWebBuilder.new_from_image_bytes(bytes)
+            .with_tile_size(32)
+            .with_output_dimensions(256, 256)
+            .wang()
+            .build();
+          // TODO: wfc.play blocks so get event_loop_proxy
+          // before starting and create function in js
+          // that sends custom play/pause events to the event loop
+          controller.start_wfc(wfc);
+          // render();
         }
       }
       async function init() {
@@ -80,31 +83,48 @@
             }
           });
         }
-        assert(window.wasm === undefined, "wasm already loaded");
         await waitUntilDefined(() => window.wasm);
+        let display = await window.wasm.WfcWindow.new();
+        controller = window.wasm.WfcController.init(display);
+        togglePlaying = () => controller.toggle_playing();
+        display.start_event_loop();
         console.log("wasm loaded");
       }
       window.onload = init;
     </script>
 
     <div id="board" class="flex h-screen w-screen">
-      <div
-        id="menu"
-        class="flex-shrink-0 bg-gray-200 w-48 h-screen"
-      >
-        <ul class="p-4">
-          <li>
-            <button data-type="menu" value="dual">Dual</button>
-          </li>
-          <li>
-            <button onclick="togglePlaying()">Play/Pause</button>
-          </li>
-          <li>
-            <a href="#" class="block px-4 py-2 hover:bg-gray-300"
-              >Menu Item 3</a
-            >
-          </li>
-        </ul>
+      <!-- TODO: display menu on side when w > h and below when h > w -->
+      <div id="menu" class="flex-shrink-0 bg-gray-200 w-48 h-screen">
+        <div id="presets" class="dropdown relative">
+          <button onclick="togglePresetMenu()" class="block">Presets</button>
+          <ul class="dropdown-menu hidden p-4">
+            <li>
+              <button
+                class="block px-4 py-2 hover:bg-gray-300"
+                data-type="menu"
+                value="dual"
+              >
+                Dual
+              </button>
+            </li>
+            <li>
+              <button
+                class="block px-4 py-2 hover:bg-gray-300"
+                data-type="menu"
+                value="celtic"
+              >
+                Celtic
+              </button>
+            </li>
+          </ul>
+        </div>
+        <button
+          class="block px-4 py-2 hover:bg-gray-300"
+          onclick="togglePlaying()"
+        >
+          Play/Pause
+        </button>
       </div>
       <div
         id="canvas-container"
