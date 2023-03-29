@@ -7,142 +7,157 @@
   </head>
 
   <body>
-    <script>
-      let controller = undefined;
-
-      let togglePlaying = () => {};
-
-      function assert(condition, message = "") {
-        if (!condition) {
-          throw new Error("Failed Assertion:" + message);
-        }
-      }
-      function togglePresetMenu() {
-        presetMenu = document.querySelector("#presets .dropdown-menu");
-        presetMenu.classList.toggle("hidden");
-      }
-      // TODO: non wang tiles
-      // TODO: specifying settings in menu
-      // TODO: uploading images
-      async function wangTileBytes(wang_tile) {
-        const path = `./assets/wang/${wang_tile}.png`;
-        const bytes = await fetch(path)
-          .then((response) => response.blob())
-          .then((blob) => {
-            const reader = new FileReader();
-            reader.readAsArrayBuffer(blob);
-            return new Promise((resolve, reject) => {
-              reader.onloadend = function () {
-                const u8Array = new Uint8Array(reader.result);
-                resolve(u8Array);
-              };
-              reader.onerror = function () {
-                reject(reader.error);
-              };
-            });
-          });
-        return bytes;
-      }
-      async function playGame(game) {
-        console.log("selectGame", game);
-        assert(window.wasm !== undefined, "wasm not loaded");
-        if (game == "simple_patterns") {
-          window.wasm.run_simple_patterns();
-        } else {
-          const bytes = await wangTileBytes(game);
-          let wfc = window.wasm.WfcWebBuilder.new_from_image_bytes(bytes)
-            .with_tile_size(32)
-            .with_output_dimensions(256, 256)
-            .wang()
-            .build();
-          // TODO: wfc.play blocks so get event_loop_proxy
-          // before starting and create function in js
-          // that sends custom play/pause events to the event loop
-          controller.start_wfc(wfc);
-          // render();
-        }
-      }
-      async function init() {
-        console.log("init");
-        for (let button of document.querySelectorAll('[data-type="menu"]')) {
-          button.addEventListener("click", (e) => playGame(button.value));
-        }
-        function waitUntilDefined(value) {
-          return new Promise((resolve) => {
-            if (value() !== undefined) {
-              resolve(value());
-            } else {
-              console.log("waiting for wasm");
-              const intervalId = setInterval(() => {
-                console.log("checking for wasm");
-                if (value() !== undefined) {
-                  clearInterval(intervalId);
-                  resolve(value());
-                }
-              }, 1);
-            }
-          });
-        }
-        await waitUntilDefined(() => window.wasm);
-        let display = await window.wasm.WfcWindow.new();
-        controller = window.wasm.WfcController.init(display);
-        togglePlaying = () => controller.toggle_playing();
-          window.addEventListener("resize", (e) => {
-            let canvas_container = document.getElementById("canvas-container");
-              let r = window.devicePixelRatio || 1;
-              let w = canvas_container.clientWidth;
-              let h = canvas_container.clientHeight;
-              // NOTE: scaling by r converts w,h into 
-              // winit PhysicalSize units
-              w = Math.round(w * r);
-              h = Math.round(h * r);
-              controller.resize_canvas(w,h);
-          });
-        display.start_event_loop();
-        console.log("wasm loaded");
-      }
-      window.onload = init;
-    </script>
-
-    <div id="board" class="flex flex-col md:flex-row h-screen w-screen">
+    <div
+      id="board"
+      class="flex flex-col lg:flex-row h-screen w-screen align-center items-center"
+    >
       <!-- TODO: display menu on side when w > h and below when h > w -->
-      <div id="menu" class="flex-shrink-0 bg-gray-200 w-48 h-screen">
-        <div id="presets" class="dropdown relative">
-          <button onclick="togglePresetMenu()" class="block">Presets</button>
-          <ul class="dropdown-menu hidden p-4">
-            <li>
-              <button
-                class="block px-4 py-2 hover:bg-gray-300"
-                data-type="menu"
-                value="dual"
-              >
-                Dual
-              </button>
-            </li>
-            <li>
-              <button
-                class="block px-4 py-2 hover:bg-gray-300"
-                data-type="menu"
-                value="celtic"
-              >
-                Celtic
-              </button>
-            </li>
-          </ul>
-        </div>
-        <button
-          class="block px-4 py-2 hover:bg-gray-300"
-          onclick="togglePlaying()"
-        >
-          Play/Pause
-        </button>
-      </div>
+
       <div
         id="canvas-container"
-        class="flex items-center justify-center h-screen w-full"
+        class="flex items-center justify-center lg:h-screen lg:w-full w-screen h-full"
       >
         <canvas class="object-contain h-full w-full" id="wfc"></canvas>
       </div>
+      <div
+        id="menu"
+        class="flex flex-row lg:flex-col bg-gray-200 lg:w-48 lg:h-screen h-48 w-screen"
+      >
+        <label for="presets">Presets</label>
+        <select id="presets" value="dual">
+          <option value="dual">Dual</option>
+          <option value="celtic">Celtic</option>
+        </select>
+        <button
+          class="bg-green-500 block px-4 py-2"
+          onclick="togglePlaying()"
+          id="play-pause"
+        >
+          <img
+            id="PLAY_ICON"
+            src="https://img.icons8.com/ios-filled/50/FFFFFF/play--v1.png"
+          />
+          <img
+            id="PAUSE_ICON"
+            style="display: none"
+            src="https://img.icons8.com/ios-filled/50/FFFFFF/pause--v1.png"
+          />
+        </button>
+      </div>
     </div>
   </body>
+  <script>
+    let controller = undefined;
+    let playing = false;
+    const PLAY_PAUSE_BUTTON = document.getElementById("play-pause");
+    const PLAY_ICON = document.getElementById("PLAY_ICON");
+    const PLAY_COLOR = "bg-green-500";
+    const PAUSE_COLOR = "bg-red-500";
+    const PAUSE_ICON = document.getElementById("PAUSE_ICON");
+
+    function togglePlaying() {
+      if (controller !== undefined) {
+        controller.toggle_playing();
+        playing = !playing;
+
+        let icon = undefined;
+        if (playing) {
+          // set icon to pause
+          PLAY_ICON.style.display = "none";
+          PAUSE_ICON.style.display = "block";
+          PLAY_PAUSE_BUTTON.classList.replace(PLAY_COLOR, PAUSE_COLOR);
+        } else {
+          PLAY_ICON.style.display = "block";
+          PAUSE_ICON.style.display = "none";
+          PLAY_PAUSE_BUTTON.classList.replace(PAUSE_COLOR, PLAY_COLOR);
+        }
+      }
+    }
+
+    function assert(condition, message = "") {
+      if (!condition) {
+        throw new Error("Failed Assertion:" + message);
+      }
+    }
+    // TODO: non wang tiles
+    // TODO: specifying settings in menu
+    // TODO: uploading images
+    async function wangTileBytes(wang_tile) {
+      const path = `./assets/wang/${wang_tile}.png`;
+      const bytes = await fetch(path)
+        .then((response) => response.blob())
+        .then((blob) => {
+          const reader = new FileReader();
+          reader.readAsArrayBuffer(blob);
+          return new Promise((resolve, reject) => {
+            reader.onloadend = function () {
+              const u8Array = new Uint8Array(reader.result);
+              resolve(u8Array);
+            };
+            reader.onerror = function () {
+              reject(reader.error);
+            };
+          });
+        });
+      return bytes;
+    }
+    async function loadWfc(game) {
+      console.log("selectGame", game);
+      assert(window.wasm !== undefined, "wasm not loaded");
+      if (playing) togglePlaying();
+      const bytes = await wangTileBytes(game);
+      let wfc = window.wasm.WfcWebBuilder.new_from_image_bytes(bytes)
+        .with_tile_size(32)
+        .with_output_dimensions(256, 256)
+        .wang()
+        .build();
+      controller.load_wfc(wfc);
+    }
+    function waitUntilDefined(value) {
+      return new Promise((resolve) => {
+        if (value() !== undefined) {
+          resolve(value());
+        } else {
+          console.log("waiting for wasm");
+          const intervalId = setInterval(() => {
+            console.log("checking for wasm");
+            if (value() !== undefined) {
+              clearInterval(intervalId);
+              resolve(value());
+            }
+          }, 1);
+        }
+      });
+    }
+
+    async function init() {
+      console.log("init");
+      // add event listener to preset
+      // TODO: divide up select into groups (wang, etc) and pass group to playgame as well
+      let presets = document.getElementById("presets");
+      presets.addEventListener("change", (e) => loadWfc(presets.value));
+      await waitUntilDefined(() => window.wasm);
+      let display = await window.wasm.WfcWindow.new();
+      controller = window.wasm.WfcController.init(display);
+
+      window.addEventListener("resize", (e) => {
+        let canvas_container = document.getElementById("canvas-container");
+        let r = window.devicePixelRatio || 1;
+        let w = canvas_container.clientWidth;
+        let h = canvas_container.clientHeight;
+        // NOTE: scaling by r converts w,h into
+        // winit PhysicalSize units
+        w = Math.round(w * r);
+        h = Math.round(h * r);
+        controller.resize_canvas(w, h);
+      });
+
+      loadWfc(presets.value);
+      playing = false;
+
+      display.start_event_loop();
+      console.log("wasm loaded");
+    }
+    window.onload = init;
+  </script>
 </html>

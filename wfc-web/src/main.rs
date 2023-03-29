@@ -90,7 +90,7 @@ impl WfcWindow {
             match event {
                 // TODO: separate into loadwfc and startwfc events
                 // and load preset on page load
-                winit::event::Event::UserEvent(WfcEvent::StartWfc(data)) => {
+                winit::event::Event::UserEvent(WfcEvent::LoadWfc(data)) => {
                     // load initial state of model
                     let (out_x, out_y) = data.output_dimensions.into();
                     let _ = self.pixels.resize_buffer(out_x, out_y);
@@ -101,9 +101,16 @@ impl WfcWindow {
                     update_frame_buffer(&mut self.pixels, &data, updated_cells);
                     self.window.request_redraw();
                     cur_model_data.replace(data);
+                    playing = false;
+                }
+                winit::event::Event::UserEvent(WfcEvent::StartWfc) => {
+                    assert!(cur_model_data.is_some());
+                    playing = true;
+                    self.window.request_redraw();
                 }
                 winit::event::Event::UserEvent(WfcEvent::CanvasResize(size)) => {
-                    // TODO: remove border around pixels buffer
+                    // TODO: remove border around pixels buffer by making window
+                    // and pixels set to output dimensions
                     self.window.set_inner_size(size);
                     // TODO: catch this error
                     let _ = self.pixels.resize_surface(size.width, size.height);
@@ -343,8 +350,10 @@ impl WfcWebBuilder {
 
 enum WfcEvent {
     TogglePlaying,
-    StartWfc(WfcData),
+    LoadWfc(WfcData),
+    StartWfc,
     CanvasResize(winit::dpi::PhysicalSize<u32>),
+
 }
 
 #[wasm_bindgen]
@@ -373,8 +382,12 @@ impl WfcController {
         let _ = self.event_loop_proxy.send_event(WfcEvent::TogglePlaying);
     }
 
-    pub fn start_wfc(&self, data: WfcData) {
-        let _ = self.event_loop_proxy.send_event(WfcEvent::StartWfc(data));
+    pub fn load_wfc(&self, data: WfcData) {
+        let _ = self.event_loop_proxy.send_event(WfcEvent::LoadWfc(data));
+    }
+
+    pub fn start_wfc(&self) {
+        let _ = self.event_loop_proxy.send_event(WfcEvent::StartWfc);
     }
 
     pub fn resize_canvas(&self, w: u32, h: u32) {

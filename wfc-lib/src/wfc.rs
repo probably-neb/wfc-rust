@@ -14,6 +14,7 @@ use crate::{
     tile::{IdMap, TileId},
     Area, Grid,
 };
+// TODO: rename all "tile" to "pattern" and "cell" to "tile"
 
 /// A Cell corresponds to a pattern in the output image
 /// It tracks the possible tiles (and their corresponding patterns) from
