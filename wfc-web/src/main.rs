@@ -67,6 +67,9 @@ impl WfcWindow {
                 .build(&event_loop)
                 .expect("WindowBuilder error")
         };
+        let size: winit::dpi::PhysicalSize<u32> =
+            get_canvas_container_size().to_physical(window.scale_factor());
+        window.set_inner_size(size);
         log::info!("window created and attached to canvas");
         let pixels = create_pixels(&window, UVec2::splat(100)).await;
 
@@ -111,6 +114,7 @@ impl WfcWindow {
                 winit::event::Event::UserEvent(WfcEvent::CanvasResize(size)) => {
                     // TODO: remove border around pixels buffer by making window
                     // and pixels set to output dimensions
+                    let size = get_canvas_container_size().to_physical(self.window.scale_factor());
                     self.window.set_inner_size(size);
                     // TODO: catch this error
                     let _ = self.pixels.resize_surface(size.width, size.height);
@@ -125,7 +129,6 @@ impl WfcWindow {
                         if playing && !done(&data.model) {
                             let updated_cells = data.model.step();
                             update_frame_buffer(&mut self.pixels, &data, updated_cells);
-
                         }
                         let err = self.pixels.render();
                         if let Err(err) = err {
@@ -353,7 +356,6 @@ enum WfcEvent {
     LoadWfc(WfcData),
     StartWfc,
     CanvasResize(winit::dpi::PhysicalSize<u32>),
-
 }
 
 #[wasm_bindgen]
@@ -399,7 +401,7 @@ impl WfcController {
 }
 
 async fn create_pixels(window: &winit::window::Window, output_dimensions: UVec2) -> Pixels {
-    let size = window.inner_size();
+    let size = get_canvas_container_size().to_physical(window.scale_factor());
     let surface_texture = pixels::SurfaceTexture::new(size.width, size.height, &window);
     log::info!("surface texture built");
 
@@ -411,6 +413,68 @@ async fn create_pixels(window: &winit::window::Window, output_dimensions: UVec2)
             .unwrap();
     log::info!("pixels built");
     return pixels;
+}
+
+fn get_canvas_container_size() -> winit::dpi::LogicalSize<u32> {
+    let canvas_container = web_sys::window()
+        .expect("window exists")
+        .document()
+        .expect("document exists")
+        .get_element_by_id("canvas-container")
+        .expect("canvas-container exists")
+        .dyn_into::<web_sys::HtmlElement>()
+        .expect("canvas container is html element");
+
+    let canvas_width: u32 = canvas_container
+        .client_width()
+        .try_into()
+        .expect("canvas width (i32) is within bounds of u32");
+    let canvas_height: u32 = canvas_container
+        .client_height()
+        .try_into()
+        .expect("canvas height (i32) is within bounds of u32");
+
+    let style = web_sys::window()
+        .expect("window exists")
+        .get_computed_style(&canvas_container)
+        .expect("style exists")
+        .expect("canvas container has styles");
+
+    let get_style = {
+        let style = &style;
+        |name: &str| {
+            let value = style
+                .get_property_value(name)
+                .expect(&format!("{name} exists"));
+            if value.is_empty() {
+                0
+            } else {
+                value.parse::<u32>().expect(&format!("{name} is u32"))
+            }
+        }
+    };
+    // let padding_left = get_style("padding-left");
+    // let padding_right = get_style("padding-right");
+    // let padding_x = padding_left + padding_right;
+    //
+    // let padding_top = get_style("padding-top");
+    // let padding_bottom = get_style("padding-bottom");
+    // let padding_y = padding_top + padding_bottom;
+    //
+    // let margin_left = get_style("margin-left");
+    // let margin_right = get_style("margin-right");
+    // let margin_x = margin_left + margin_right;
+    //
+    // let margin_top = get_style("margin-top");
+    // let margin_bottom = get_style("margin-bottom");
+    // let margin_y = margin_top + margin_bottom;
+
+    // log::warn!("resizing: w: {canvas_width} h: {canvas_height} p-x: {padding_x} p-y: {padding_y} m-x: {margin_x} m-y: {margin_y}");
+
+    return winit::dpi::LogicalSize::new(
+        canvas_width ,
+        canvas_height,
+    );
 }
 
 fn rgba_f32_to_u8(a: f32) -> u8 {

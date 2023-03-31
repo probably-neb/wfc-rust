@@ -7,42 +7,48 @@
   </head>
 
   <body>
-    <div
-      id="board"
-      class="flex flex-col lg:flex-row h-screen w-screen align-center items-center"
-    >
-      <!-- TODO: display menu on side when w > h and below when h > w -->
-
-      <div
-        id="canvas-container"
-        class="flex items-center justify-center lg:h-screen lg:w-full w-screen h-full"
-      >
-        <canvas class="object-contain h-full w-full" id="wfc"></canvas>
+    <div id="page1" class="w-screen h-screen flex flex-col justify-center">
+      <div id="title" class="flex flex-row justify-center m-2">
+        <h1 class="text-4xl">
+          <ul>
+            Wave Function Collapse
+          </ul>
+        </h1>
       </div>
-      <div
-        id="menu"
-        class="flex flex-row lg:flex-col bg-gray-200 lg:w-48 lg:h-screen h-48 w-screen"
-      >
-        <label for="presets">Presets</label>
-        <select id="presets" value="dual">
-          <option value="dual">Dual</option>
-          <option value="celtic">Celtic</option>
-        </select>
-        <button
-          class="bg-green-500 block px-4 py-2"
-          onclick="togglePlaying()"
-          id="play-pause"
+      <div id="board-outer" class="flex flex-row justify-center w-full px-8">
+        <div
+          id="board"
+          class="flex flex-col justify-between lg:flex-row bg-gray-500 p-4 m-2 w-full"
         >
-          <img
-            id="PLAY_ICON"
-            src="https://img.icons8.com/ios-filled/50/FFFFFF/play--v1.png"
-          />
-          <img
-            id="PAUSE_ICON"
-            style="display: none"
-            src="https://img.icons8.com/ios-filled/50/FFFFFF/pause--v1.png"
-          />
-        </button>
+          <div id="canvas-container" class="flex flex-row justify-center">
+            <canvas class="object-contain" id="wfc"></canvas>
+          </div>
+          <div
+            id="menu"
+            class="flex flex-row lg:flex-col lg:ml-4 mt-4 bg-gray-200"
+          >
+            <label for="presets">Presets</label>
+            <select id="presets" value="dual">
+              <option value="dual">Dual</option>
+              <option value="celtic">Celtic</option>
+            </select>
+            <button
+              class="bg-green-500 block px-4 py-2"
+              onclick="togglePlaying()"
+              id="play-pause"
+            >
+              <img
+                id="PLAY_ICON"
+                src="https://img.icons8.com/ios-filled/50/FFFFFF/play--v1.png"
+              />
+              <img
+                id="PAUSE_ICON"
+                style="display: none"
+                src="https://img.icons8.com/ios-filled/50/FFFFFF/pause--v1.png"
+              />
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </body>
@@ -143,10 +149,24 @@
       window.addEventListener("resize", (e) => {
         let canvas_container = document.getElementById("canvas-container");
         let r = window.devicePixelRatio || 1;
-        let w = canvas_container.clientWidth;
-        let h = canvas_container.clientHeight;
+        let w = canvas_container.offsetWidth;
+        let h = canvas_container.offsetHeight;
+        let styles = window.getComputedStyle(canvas_container);
+        w =
+          w -
+          parseFloat(styles.paddingLeft) -
+          parseFloat(styles.paddingRight) -
+          parseFloat(styles.marginLeft) -
+          parseFloat(styles.marginRight);
+        h =
+          h -
+          parseFloat(styles.paddingTop) -
+          parseFloat(styles.paddingBottom) -
+          parseFloat(styles.marginTop) -
+          parseFloat(styles.marginBottom);
         // NOTE: scaling by r converts w,h into
         // winit PhysicalSize units
+        r = 1;
         w = Math.round(w * r);
         h = Math.round(h * r);
         controller.resize_canvas(w, h);
