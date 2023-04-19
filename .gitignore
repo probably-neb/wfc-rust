@@ -8,3 +8,6 @@ perf.data
 log
 perf.data.old
 wfc-web/dist
+.vercel
+wfc-web/node_modules
+wfc-web/tailwind.css

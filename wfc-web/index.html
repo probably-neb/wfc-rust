@@ -8,46 +8,53 @@
 
   <body>
     <div id="page1" class="w-screen h-screen flex flex-col justify-center">
-      <div id="title" class="flex flex-row justify-center m-2">
+      <div id="title" class="flex flex-row justify-center p-2 mt-4">
         <h1 class="text-4xl">
           <ul>
-            Wave Function Collapse
+            Wave Function Collapse!
           </ul>
         </h1>
       </div>
-      <div id="board-outer" class="flex flex-row justify-center w-full px-8">
-        <div
-          id="board"
-          class="flex flex-col justify-between lg:flex-row bg-gray-500 p-4 m-2 w-full"
-        >
+      <div
+        id="player+menu"
+        class="flex flex-col shrink justify-between lg:justify-center lg:flex-row bg-gray-500 py-4 px-8 m-4 w-full"
+      >
+        <div id="player" class="flex flex-col justify-evenly">
           <div id="canvas-container" class="flex flex-row justify-center">
             <canvas class="object-contain" id="wfc"></canvas>
           </div>
           <div
-            id="menu"
-            class="flex flex-row lg:flex-col lg:ml-4 mt-4 bg-gray-200"
+            id="play-controls"
+            class="z-50 bottom-0 flex flex-row justify-between my-2"
           >
-            <label for="presets">Presets</label>
-            <select id="presets" value="dual">
-              <option value="dual">Dual</option>
-              <option value="celtic">Celtic</option>
-            </select>
-            <button
-              class="bg-green-500 block px-4 py-2"
-              onclick="togglePlaying()"
-              id="play-pause"
-            >
-              <img
-                id="PLAY_ICON"
-                src="https://img.icons8.com/ios-filled/50/FFFFFF/play--v1.png"
-              />
-              <img
-                id="PAUSE_ICON"
-                style="display: none"
-                src="https://img.icons8.com/ios-filled/50/FFFFFF/pause--v1.png"
-              />
-            </button>
+            <div id="left-play-controls">
+              <button
+                class="bg-green-500 block rounded-sm px-4 py-2"
+                onclick="togglePlaying()"
+                id="play-pause"
+              >
+                <img
+                  id="PLAY_ICON"
+                  src="https://img.icons8.com/ios-filled/50/FFFFFF/play--v1.png"
+                />
+                <img
+                  id="PAUSE_ICON"
+                  style="display: none"
+                  src="https://img.icons8.com/ios-filled/50/FFFFFF/pause--v1.png"
+                />
+              </button>
+            </div>
           </div>
+        </div>
+        <div
+          id="menu"
+          class="flex flex-row lg:flex-col lg:ml-4 mt-4 bg-gray-200"
+        >
+          <label for="presets">Presets</label>
+          <select id="presets" value="dual">
+            <option value="dual">Dual</option>
+            <option value="celtic">Celtic</option>
+          </select>
         </div>
       </div>
     </div>

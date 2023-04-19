@@ -6,6 +6,7 @@ use image::Rgba;
 use pixels::Pixels;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+use wfc_lib::preprocessor::PreProcessor;
 use wfc_lib::tile::TileId;
 use wfc_lib::{preprocessor::Pattern, wfc::Model};
 use winit::platform::web::WindowBuilderExtWebSys;
@@ -112,8 +113,7 @@ impl WfcWindow {
                     self.window.request_redraw();
                 }
                 winit::event::Event::UserEvent(WfcEvent::CanvasResize(size)) => {
-                    // TODO: remove border around pixels buffer by making window
-                    // and pixels set to output dimensions
+                    // TODO: use exisiting resize event
                     let size = get_canvas_container_size().to_physical(self.window.scale_factor());
                     self.window.set_inner_size(size);
                     // TODO: catch this error
@@ -145,9 +145,6 @@ impl WfcWindow {
 }
 
 fn update_frame_buffer(pixels: &mut Pixels, data: &WfcData, mut updated_cells: Vec<UVec2>) {
-    // FIXME: figure out a better way of keeping track of updated cells other than
-    // in models state
-
     let WfcData {
         model,
         patterns,
@@ -287,6 +284,7 @@ impl WfcWebBuilder {
         return self;
     }
 
+    // TODO: wrap_input and wrap_output
     pub fn wrap(mut self) -> Self {
         self.processor_config.as_mut().unwrap().wrap = true;
         return self;
@@ -314,15 +312,12 @@ impl WfcWebBuilder {
         return &self.wfc_data.as_ref().unwrap().tile_frequencies;
     }
     pub fn process_image(&mut self) {
-        let mut processor = wfc_lib::preprocessor::PreProcessor::new(
-            self.image.as_ref().expect("Image is set"),
-            self.tile_size,
-            self.processor_config
-                .as_ref()
-                .expect("ProcessorConfig is set")
-                .clone(),
-        );
-        self.wfc_data = Some(processor.process());
+        // FIXME: solution for creating different forms of preprocessor
+        // intutively make processor builder that wfc builder either creates
+        // behind the scenes or is passed
+        let mut processor = wfc_lib::preprocessor::WangPreprocessor::new(self.tile_size);
+        self.wfc_data =
+            Some(processor.process(self.image.as_ref().expect("Image is set").to_owned()));
     }
 
     pub fn build(&mut self) -> WfcData {
@@ -434,47 +429,7 @@ fn get_canvas_container_size() -> winit::dpi::LogicalSize<u32> {
         .try_into()
         .expect("canvas height (i32) is within bounds of u32");
 
-    let style = web_sys::window()
-        .expect("window exists")
-        .get_computed_style(&canvas_container)
-        .expect("style exists")
-        .expect("canvas container has styles");
-
-    let get_style = {
-        let style = &style;
-        |name: &str| {
-            let value = style
-                .get_property_value(name)
-                .expect(&format!("{name} exists"));
-            if value.is_empty() {
-                0
-            } else {
-                value.parse::<u32>().expect(&format!("{name} is u32"))
-            }
-        }
-    };
-    // let padding_left = get_style("padding-left");
-    // let padding_right = get_style("padding-right");
-    // let padding_x = padding_left + padding_right;
-    //
-    // let padding_top = get_style("padding-top");
-    // let padding_bottom = get_style("padding-bottom");
-    // let padding_y = padding_top + padding_bottom;
-    //
-    // let margin_left = get_style("margin-left");
-    // let margin_right = get_style("margin-right");
-    // let margin_x = margin_left + margin_right;
-    //
-    // let margin_top = get_style("margin-top");
-    // let margin_bottom = get_style("margin-bottom");
-    // let margin_y = margin_top + margin_bottom;
-
-    // log::warn!("resizing: w: {canvas_width} h: {canvas_height} p-x: {padding_x} p-y: {padding_y} m-x: {margin_x} m-y: {margin_y}");
-
-    return winit::dpi::LogicalSize::new(
-        canvas_width ,
-        canvas_height,
-    );
+    return winit::dpi::LogicalSize::new(canvas_width, canvas_height);
 }
 
 fn rgba_f32_to_u8(a: f32) -> u8 {

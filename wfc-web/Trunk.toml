@@ -6,5 +6,5 @@ pattern_script = "<script type=\"module\">import init, * as with_bindings from '
 
 [[hooks]]
 stage = "pre_build"
-command = "/home/neb/.yarn/bin/tailwindcss"
-command_arguments = ["-o","./tailwind.css"]
+command = "npx"
+command_arguments = ["tailwindcss","-o","./tailwind.css"]
