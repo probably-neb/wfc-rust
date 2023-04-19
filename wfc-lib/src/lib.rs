@@ -8,9 +8,11 @@ use derive_more::{Deref, DerefMut, From, IsVariant};
 use glam::UVec2;
 use image::{io::Reader as ImageReader, RgbaImage};
 use preprocessor::{Pattern, PreProcessor, ProcessorConfig, WfcData};
-use std::{fmt::Debug, fs::File, path::Path};
+use std::{fmt::Debug, path::Path};
 use tile::IdMap;
 use wfc::Model;
+
+use crate::preprocessor::SimpleTiledPreProcessor;
 
 const TILE_SIZE_DEFAULT: usize = 2;
 const PIXEL_SCALE_DEFAULT: u32 = 2;
@@ -170,15 +172,14 @@ impl Wfc {
     }
     pub fn process_image(&mut self) {
         assert!(self.creation_mode.is_from_image());
-        let mut processor = PreProcessor::new(
-            self.image.as_ref().expect("Image is set"),
+        let processor = SimpleTiledPreProcessor::new(
             self.tile_size,
             self.processor_config
                 .as_ref()
                 .expect("ProcessorConfig is set")
                 .clone(),
         );
-        self.wfc_data = Some(processor.process());
+        self.wfc_data = Some(processor.process(self.image.as_ref().expect("Image is set").to_owned()));
     }
 
     pub fn get_model(&mut self) -> Model {

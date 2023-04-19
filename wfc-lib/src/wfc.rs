@@ -280,6 +280,8 @@ impl Model {
         }
 
         let mut updated_cells: Vec<UVec2> = Vec::with_capacity(self.updated_cells.len());
+        // NOTE: append moves the values out of self.updated_cells and into the new vec that is
+        // returned
         updated_cells.append(&mut self.updated_cells);
         return updated_cells;
     }
