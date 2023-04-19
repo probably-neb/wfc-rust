@@ -1,5 +1,23 @@
 {
   "devDependencies": {
     "tailwindcss": "^3.3.1"
+    "@babel/cli": "^7.21.0",
+    "@babel/core": "^7.21.4",
+    "@babel/plugin-transform-react-jsx": "^7.21.0",
+    "@babel/preset-env": "^7.21.4",
+    "@webpack-cli/generators": "^3.0.1",
+    "babel-cli": "^6.26.0",
+    "babel-loader": "^9.1.2",
+    "css-loader": "^6.7.3",
+    "mini-css-extract-plugin": "^2.7.5",
+    "style-loader": "^3.3.2",
+    "ts-loader": "^9.4.2",
+    "typescript": "^5.0.4",
+    "webpack": "^5.79.0",
+    "webpack-cli": "^5.0.1"
+  },
+  "dependencies": {
+    "babel-preset-solid": "^1.7.3",
+    "solid-js": "^1.7.3"
   }
 }
