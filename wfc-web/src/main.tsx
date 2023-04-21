@@ -1,5 +1,5 @@
 import { render } from "solid-js/web";
-import { createSignal, Show, createEffect, Accessor } from "solid-js";
+import { createSignal, Show, createEffect, Accessor, Setter } from "solid-js";
 import { createStore } from "solid-js/store";
 // TODO: figure out how to use wasm bindgen to generate wfc-web.d.ts before webpack webpacks
 import type { WfcController, WfcData } from "./wfc-web.d.ts";
@@ -8,8 +8,11 @@ import type * as WfcNamespace from "./wfc-web.d.ts";
 // TODO: figure out why this works
 type Wfc = typeof WfcNamespace;
 
+type ReloadFunc = () => Promise<void>;
+
 function PlayControls(props: {
   controller: Accessor<WfcController | undefined>;
+  reload: Accessor<ReloadFunc>;
 }) {
   // NOTE: playing implies pause icon and vice versa
   const [playing, setPlaying] = createSignal(false);
@@ -17,6 +20,10 @@ function PlayControls(props: {
   const toggle = () => {
     setPlaying(!playing());
     props.controller()?.toggle_playing();
+  };
+  const reload = () => {
+    setPlaying(false);
+    props.reload()();
   };
 
   const PauseIcon = (
@@ -57,7 +64,11 @@ function PlayControls(props: {
         </button>
       </div>
       <div id="right-play-controls">
-        <button class="bg-blue-500 block rounded-md">
+        <button
+          class="bg-blue-500 block rounded-md"
+          id="reload-button"
+          onClick={reload}
+        >
           <img
             class="w-14 h-14"
             src="https://img.icons8.com/external-others-inmotus-design/67/FFFFFF/external-Reload-round-icons-others-inmotus-design-6.png"
@@ -154,7 +165,7 @@ function PresetSelector(props: {
   // set preset once wasm is done loading
   createEffect(() => {
     if (!loading()) {
-      setPresetSignal("dual");
+      setPresetSignal(DEFAULT_PRESET);
     }
   });
   // TODO: add button toggle to set whether to load preset settings
@@ -174,14 +185,24 @@ function PresetSelector(props: {
     </>
   );
 }
-function ConfigMenu(props: {
+function PlayerSettingsMenu(props: {
   wfc: Accessor<Wfc | undefined>;
   controller: Accessor<WfcController | undefined>;
   loading: Accessor<boolean>;
+  setReloadFunc: Setter<ReloadFunc>;
 }) {
   const [settings, setSettings] = createStore<PlayerSettings>(
     PRESET_SETTINGS[DEFAULT_PRESET]
   );
+  async function loadWfc() {
+    if (!props.loading()) {
+      console.log("loading:", settings.image);
+      const bytes = await wangTileBytes(settings.image);
+      const wfcData = buildWfc(props.wfc()!, settings, bytes);
+      props.controller()!.load_wfc(wfcData);
+    }
+  }
+  props.setReloadFunc((_prev) => loadWfc);
   // TODO: resize text in input field text boxes on overflow
   // TODO: make `input` component that does ^ and other repeated logic below
   return (
@@ -233,16 +254,7 @@ function ConfigMenu(props: {
         ></input>
       </div>
       <div class="border-b border-2 border-white my-4 lg:w-full"></div>
-      <button
-        class="bg-blue-500 block rounded-md"
-        onClick={async () => {
-          if (!props.loading()) {
-            const bytes = await wangTileBytes(settings.image);
-            const wfcData = buildWfc(props.wfc()!, settings, bytes);
-            props.controller()!.load_wfc(wfcData);
-          }
-        }}
-      >
+      <button class="bg-blue-500 block rounded-md" onClick={loadWfc}>
         Apply
       </button>
     </div>
@@ -262,13 +274,21 @@ async function init() {
   const [wfc, setWfc] = createSignal<Wfc | undefined>();
   const [controller, setController] = createSignal<WfcController | undefined>();
   const [loading, setLoading] = createSignal<boolean>(true);
+  const [reloadFunc, setReloadFunc] = createSignal<ReloadFunc>(async () => {});
 
   render(
-    () => <PlayControls controller={controller} />,
+    () => <PlayControls controller={controller} reload={reloadFunc} />,
     document.getElementById("player-control-bar")!
   );
   render(
-    () => <ConfigMenu wfc={wfc} controller={controller} loading={loading} />,
+    () => (
+      <PlayerSettingsMenu
+        wfc={wfc}
+        controller={controller}
+        loading={loading}
+        setReloadFunc={setReloadFunc}
+      />
+    ),
     document.getElementById("player-settings-menu")!
   );
 
