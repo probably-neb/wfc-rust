@@ -1,6 +1,6 @@
 import { render } from "solid-js/web";
-import { createSignal, Show, onMount } from "solid-js";
-import { createStore } from "solid-js/store";
+import { createSignal, Show, onMount, createEffect, Accessor } from "solid-js";
+import { createStore, SetStoreFunction } from "solid-js/store";
 // TODO: figure out how to use wasm bindgen to generate wfc-web.d.ts before webpack webpacks
 import type {
   WfcController,
@@ -14,14 +14,21 @@ import type * as WfcNamespace from "./wfc-web.d.ts";
 // TODO: figure out why this works
 type Wfc = typeof WfcNamespace;
 
-function PlayControls(props: { controller: WfcController }) {
+function PlayControls(props: {
+  controller: Accessor<WfcController | undefined>;
+}) {
   // NOTE: playing implies pause icon and vice versa
   const [playing, setPlaying] = createSignal(false);
 
   const toggle = () => {
-    props.controller.toggle_playing();
     setPlaying(!playing());
   };
+  createEffect(() => {
+    props.controller()?.toggle_playing();
+    // must use playing signal in useEffect so it is ran
+    // when playing changes
+    const _ = playing();
+  });
 
   const PauseIcon = (
     <img
@@ -99,16 +106,17 @@ interface PlayerSettings {
 }
 
 function PresetSelector(props: {
-  wfc: Wfc;
-  controller: WfcController;
+  wfc: Accessor<Wfc | undefined>;
+  controller: Accessor<WfcController | undefined>;
+  loading: Accessor<boolean>;
   setSettings: (arg0: PlayerSettings) => void;
 }) {
-  const { wfc, controller, setSettings } = props;
+  const { wfc, controller, loading } = props;
   type PresetImage = "dual" | "celtic";
   const [preset, setPresetSignal]: [
-    () => PresetImage,
+    () => PresetImage | null,
     (p: PresetImage) => void
-  ] = createSignal("dual");
+  ] = createSignal(null);
   const presetSettings: { [Key in PresetImage]: PlayerSettings } = {
     dual: {
       tile_size: 32,
@@ -122,21 +130,34 @@ function PresetSelector(props: {
     },
   };
 
-  async function loadPreset(value: PresetImage) {
-    console.log("Selected preset:", value);
-    setPresetSignal(value);
-    const bytes = await wangTileBytes(value);
-    const settings = presetSettings[value];
-    let wfcData: WfcData = wfc.WfcWebBuilder.new_from_image_bytes(bytes)
-      .with_tile_size(settings.tile_size)
-      .with_output_dimensions(settings.output_size.x, settings.output_size.y)
-      .wang()
-      .build();
-    setSettings(settings);
-    controller.load_wfc(wfcData);
-  }
-  onMount(() => {
-    loadPreset(preset());
+  createEffect(async () => {
+    if (preset()) {
+      const bytes = await wangTileBytes(preset()!);
+      const settings = presetSettings[preset()!];
+      props.setSettings(settings);
+
+      if (!loading()) {
+        console.log("Selected preset:", preset()!);
+        const wfcData: WfcData = wfc()!
+          .WfcWebBuilder.new_from_image_bytes(bytes)
+          .with_tile_size(settings.tile_size)
+          .with_output_dimensions(
+            settings.output_size.x,
+            settings.output_size.y
+          )
+          .wang()
+          .build();
+        controller()!.load_wfc(wfcData);
+      } else {
+        console.log("wfc not loaded");
+      }
+    }
+  });
+  // set preset once wasm is done loading
+  createEffect(() => {
+    if (!loading()) {
+      setPresetSignal("dual");
+    }
   });
   // TODO: add button toggle to set whether to load preset settings
   // along with image (so that users can maintain their own settings)
@@ -146,8 +167,8 @@ function PresetSelector(props: {
       <select
         id="presets"
         class="border-2 text-white bg-transparent rounded-sm p-1"
-        onChange={(e) => loadPreset(e.target!.value as PresetImage)}
-        value={preset()}
+        onChange={(e) => setPresetSignal(e.target!.value as PresetImage)}
+        value={preset() || undefined}
       >
         <option value="dual">Dual</option>
         <option value="celtic">Celtic</option>
@@ -155,20 +176,21 @@ function PresetSelector(props: {
     </>
   );
 }
-function ConfigMenu(props: { wfc: Wfc; controller: WfcController }) {
-  const { wfc, controller } = props;
-  const [settings, setSettings] = createStore({
-    tile_size: 2,
-    output_size: { x: 256, y: 256 },
-  });
+function ConfigMenu(props: {
+  wfc: Accessor<Wfc | undefined>;
+  controller: Accessor<WfcController | undefined>;
+  loading: Accessor<boolean>;
+}) {
+  const [settings, setSettings] = createSignal<PlayerSettings | undefined>();
   return (
     <div
       id="config-menu"
       class="flex shrink flex-row lg:flex-col lg:ml-4 my-4 rounded-md border-2 text-white p-2"
     >
       <PresetSelector
-        wfc={wfc}
-        controller={controller}
+        wfc={props.wfc}
+        controller={props.controller}
+        loading={props.loading}
         setSettings={setSettings}
       />
       <div class="border-b border-2 border-white my-4 lg:w-full"></div>
@@ -180,7 +202,7 @@ function ConfigMenu(props: { wfc: Wfc; controller: WfcController }) {
         <input
           type="number"
           class="w-10 bg-transparent border-1"
-          value={settings.tile_size}
+          value={settings()?.tile_size}
         ></input>
       </div>
       <div class="border-b border-2 border-white my-4 lg:w-full"></div>
@@ -192,13 +214,13 @@ function ConfigMenu(props: { wfc: Wfc; controller: WfcController }) {
         <input
           type="number"
           class="w-12 bg-transparent border-1"
-          value={settings.output_size.x}
+          value={settings()?.output_size.x}
         ></input>
         <span class="mx-1">x</span>
         <input
           type="number"
           class="w-12 bg-transparent border-1"
-          value={settings.output_size.y}
+          value={settings()?.output_size.y}
         ></input>
       </div>
     </div>
@@ -214,21 +236,26 @@ declare global {
   }
 }
 
+interface WfcStore {
+  wfc: Wfc | undefined;
+  controller: WfcController | undefined;
+  isLoading: boolean;
+}
+
 async function init() {
   // Wait for wasm module to load and be added to window
-  const wfc: Wfc = await new Promise((resolve) => {
-    console.log("waiting for wasm");
-    const intervalId = setInterval(() => {
-      console.log("checking for wasm");
-      if (window.wasm !== undefined) {
-        clearInterval(intervalId);
-        resolve(window.wasm);
-      }
-    }, 100);
-  });
-  console.log("wasm loaded");
-  let display = await wfc.WfcWindow.new();
-  const controller = wfc.WfcController.init(display);
+  const [wfc, setWfc] = createSignal<Wfc | undefined>();
+  const [controller, setController] = createSignal<WfcController | undefined>();
+  const [loading, setLoading] = createSignal<boolean>(true);
+
+  render(
+    () => <PlayControls controller={controller} />,
+    document.getElementById("player-control-bar")!
+  );
+  render(
+    () => <ConfigMenu wfc={wfc} controller={controller} loading={loading} />,
+    document.getElementById("player-settings-menu")!
+  );
 
   window.addEventListener("resize", (_e) => {
     let canvas_container = document.getElementById("canvas-container");
@@ -256,20 +283,38 @@ async function init() {
     // winit PhysicalSize units
     w = Math.round(w * r);
     h = Math.round(h * r);
-    controller.resize_canvas(w, h);
+    controller()?.resize_canvas(w, h);
   });
-  render(
-    () => <PlayControls controller={controller} />,
-    document.getElementById("player")!
-  );
-  render(
-    () => <ConfigMenu wfc={wfc} controller={controller} />,
-    document.getElementById("player+menu")!
-  );
 
-  console.log("Starting event-loop");
-  // NOTE: this is blocking! nothing after this will run!
-  display.start_event_loop();
+  // separated for type checking
+  const wfcPromise: Promise<Wfc> = new Promise((resolve) => {
+    const intervalId = setInterval(() => {
+      console.log("waiting for wasm init");
+      if (window.wasm !== undefined) {
+        clearInterval(intervalId);
+        resolve(window.wasm as Wfc);
+      }
+    }, 100);
+  });
+  wfcPromise
+    .then((_wfc) => {
+      console.log("wasm loaded");
+      setWfc(_wfc);
+      return _wfc;
+    })
+    .then(async (_wfc) => {
+      const display = await _wfc.WfcWindow.new();
+      const controller = _wfc.WfcController.init(display);
+      console.log("attaching window");
+      setController(controller);
+      setLoading(false);
+      return display;
+    })
+    .then((display) => {
+      console.log("starting event loop");
+      // NOTE: this is blocking! nothing after this will run!
+      display.start_event_loop();
+    });
 }
 
 init();
