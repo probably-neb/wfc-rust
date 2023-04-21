@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <link data-trunk rel="rust" />
+    <link data-trunk data-typescript rel="rust" />
     <link data-trunk rel="css" href="./tailwind.css" />
     <link data-trunk rel="copy-dir" href="assets" />
-    <link data-trunk rel="copy-file" href=".webpack/main.bundle.js" />
+    <!-- <link data-trunk rel="copy-file" href=".webpack/main.bundle.js" /> -->
+      <link data-trunk rel="inline" href="./.webpack/main.bundle.js" />
   </head>
 
   <body>
@@ -31,12 +32,11 @@
         </div>
         <div
           id="config-menu"
-          class="flex flex-row lg:flex-col lg:ml-4 mt-4 bg-gray-200"
+          class="flex shrink flex-row lg:flex-col lg:ml-4 my-4 rounded-md border-2 text-white p-2"
         >
         </div>
       </div>
     </div>
   </body>
 
-  <script src="./main.bundle.js"></script>
 </html>

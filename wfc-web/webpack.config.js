@@ -11,12 +11,12 @@ const stylesHandler = isProduction
 
 const config = {
   entry: {
-    main: "./src/main.jsx",
+    main: "./src/main.tsx",
   },
   output: {
     path: path.resolve(__dirname, ".webpack"),
-    filename: '[name].bundle.js',
-    clean: true
+    filename: "[name].bundle.js",
+    clean: true,
   },
   plugins: [
     // Add your plugins here
@@ -26,8 +26,18 @@ const config = {
     rules: [
       {
         test: /\.(ts|tsx)$/i,
-        loader: "ts-loader",
         exclude: /node_modules/,
+        use: {
+          loader: "babel-loader",
+          options: {
+            babelrc: false,
+            configFile: false,
+            presets: ["solid", "@babel/preset-typescript"],
+            parserOpts: {
+              plugins: ["jsx"],
+            },
+          },
+        }
       },
       {
         test: /\.(js|jsx)$/i,

@@ -5,7 +5,7 @@
 pattern_script = "<script type=\"module\">import init, * as with_bindings from '{base}{js}';init('{base}{wasm}').then(()=>window.wasm=with_bindings);</script>"
 
 [watch]
-ignore = [".webpack"]
+ignore = [".webpack", "src/wfc-web.d.ts"]
 
 [[hooks]]
 stage = "pre_build"
@@ -16,3 +16,8 @@ command_arguments = ["tailwindcss","-o","./tailwind.css"]
 stage = "pre_build"
 command = "npx"
 command_arguments = ["webpack", "--config", "webpack.config.js"]
+
+[[hooks]]
+stage = "post_build"
+command = "sh"
+command_arguments = ["-c", "mv $TRUNK_STAGING_DIR/wfc-web-*.d.ts $TRUNK_SOURCE_DIR/src/wfc-web.d.ts"]
