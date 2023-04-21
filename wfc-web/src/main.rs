@@ -290,8 +290,8 @@ impl WfcWebBuilder {
         return self;
     }
 
-    pub fn wang(mut self) -> Self {
-        self.processor_config.as_mut().unwrap().wang = true;
+    pub fn wang(mut self, val: Option<bool>) -> Self {
+        self.processor_config.as_mut().unwrap().wang = val.unwrap_or(true);
         return self;
     }
 

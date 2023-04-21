@@ -59,9 +59,10 @@ export class WfcWebBuilder {
 */
   wrap(): WfcWebBuilder;
 /**
+* @param {boolean | undefined} val
 * @returns {WfcWebBuilder}
 */
-  wang(): WfcWebBuilder;
+  wang(val?: boolean): WfcWebBuilder;
 /**
 * @returns {WfcWebBuilder}
 */
@@ -100,7 +101,7 @@ export interface InitOutput {
   readonly wfcwebbuilder_with_output_dimensions: (a: number, b: number, c: number) => number;
   readonly wfcwebbuilder_with_tile_size: (a: number, b: number) => number;
   readonly wfcwebbuilder_wrap: (a: number) => number;
-  readonly wfcwebbuilder_wang: (a: number) => number;
+  readonly wfcwebbuilder_wang: (a: number, b: number) => number;
   readonly wfcwebbuilder_wang_flip: (a: number) => number;
   readonly wfcwebbuilder_process_image: (a: number) => void;
   readonly wfcwebbuilder_build: (a: number) => number;

@@ -1,14 +1,8 @@
 import { render } from "solid-js/web";
-import { createSignal, Show, onMount, createEffect, Accessor } from "solid-js";
-import { createStore, SetStoreFunction } from "solid-js/store";
+import { createSignal, Show, createEffect, Accessor } from "solid-js";
+import { createStore } from "solid-js/store";
 // TODO: figure out how to use wasm bindgen to generate wfc-web.d.ts before webpack webpacks
-import type {
-  WfcController,
-  WfcData,
-  WfcWindow,
-  WfcWebBuilder,
-  InitOutput,
-} from "./wfc-web.d.ts";
+import type { WfcController, WfcData } from "./wfc-web.d.ts";
 import type * as WfcNamespace from "./wfc-web.d.ts";
 
 // TODO: figure out why this works
@@ -22,13 +16,8 @@ function PlayControls(props: {
 
   const toggle = () => {
     setPlaying(!playing());
-  };
-  createEffect(() => {
     props.controller()?.toggle_playing();
-    // must use playing signal in useEffect so it is ran
-    // when playing changes
-    const _ = playing();
-  });
+  };
 
   const PauseIcon = (
     <img
@@ -103,6 +92,36 @@ interface PlayerSettings {
   tile_size: number;
   output_size: { x: number; y: number };
   wang: boolean;
+  image: PresetImage;
+}
+type PresetImage = "dual" | "celtic";
+const DEFAULT_PRESET: PresetImage = "dual";
+const PRESET_SETTINGS: { [Key in PresetImage]: PlayerSettings } = {
+  dual: {
+    tile_size: 32,
+    output_size: { x: 256, y: 256 },
+    wang: true,
+    image: "dual",
+  },
+  celtic: {
+    tile_size: 32,
+    output_size: { x: 256, y: 256 },
+    wang: true,
+    image: "celtic",
+  },
+};
+
+function buildWfc(
+  wfc: Wfc,
+  settings: PlayerSettings,
+  imageBytes: Uint8Array
+): WfcData {
+  const wfcData: WfcData = wfc.WfcWebBuilder.new_from_image_bytes(imageBytes)
+    .with_tile_size(settings.tile_size)
+    .with_output_dimensions(settings.output_size.x, settings.output_size.y)
+    .wang(settings.wang)
+    .build();
+  return wfcData;
 }
 
 function PresetSelector(props: {
@@ -112,41 +131,20 @@ function PresetSelector(props: {
   setSettings: (arg0: PlayerSettings) => void;
 }) {
   const { wfc, controller, loading } = props;
-  type PresetImage = "dual" | "celtic";
   const [preset, setPresetSignal]: [
     () => PresetImage | null,
     (p: PresetImage) => void
   ] = createSignal(null);
-  const presetSettings: { [Key in PresetImage]: PlayerSettings } = {
-    dual: {
-      tile_size: 32,
-      output_size: { x: 256, y: 256 },
-      wang: true,
-    },
-    celtic: {
-      tile_size: 32,
-      output_size: { x: 256, y: 256 },
-      wang: true,
-    },
-  };
-
   createEffect(async () => {
     if (preset()) {
-      const bytes = await wangTileBytes(preset()!);
-      const settings = presetSettings[preset()!];
+      const settings = PRESET_SETTINGS[preset()!];
       props.setSettings(settings);
 
       if (!loading()) {
         console.log("Selected preset:", preset()!);
-        const wfcData: WfcData = wfc()!
-          .WfcWebBuilder.new_from_image_bytes(bytes)
-          .with_tile_size(settings.tile_size)
-          .with_output_dimensions(
-            settings.output_size.x,
-            settings.output_size.y
-          )
-          .wang()
-          .build();
+        // TODO: put image loading in a createResource()
+        const bytes = await wangTileBytes(settings.image);
+        const wfcData = buildWfc(wfc()!, settings, bytes);
         controller()!.load_wfc(wfcData);
       } else {
         console.log("wfc not loaded");
@@ -181,7 +179,11 @@ function ConfigMenu(props: {
   controller: Accessor<WfcController | undefined>;
   loading: Accessor<boolean>;
 }) {
-  const [settings, setSettings] = createSignal<PlayerSettings | undefined>();
+  const [settings, setSettings] = createStore<PlayerSettings>(
+    PRESET_SETTINGS[DEFAULT_PRESET]
+  );
+  // TODO: resize text in input field text boxes on overflow
+  // TODO: make `input` component that does ^ and other repeated logic below
   return (
     <div
       id="config-menu"
@@ -201,8 +203,9 @@ function ConfigMenu(props: {
         <span class="mr-1">Tile Size:</span>
         <input
           type="number"
-          class="w-10 bg-transparent border-1"
-          value={settings()?.tile_size}
+          class="w-10 bg-transparent border-2 truncate hover:whitespace-normal"
+          value={settings.tile_size}
+          onChange={(e) => setSettings("tile_size", e.target.valueAsNumber)}
         ></input>
       </div>
       <div class="border-b border-2 border-white my-4 lg:w-full"></div>
@@ -213,16 +216,35 @@ function ConfigMenu(props: {
         <span class="mr-1">Output Size:</span>
         <input
           type="number"
-          class="w-12 bg-transparent border-1"
-          value={settings()?.output_size.x}
+          class="w-12 bg-transparent border-2"
+          value={settings.output_size.x}
+          onChange={(e) =>
+            setSettings("output_size", "x", e.target.valueAsNumber)
+          }
         ></input>
         <span class="mx-1">x</span>
         <input
           type="number"
-          class="w-12 bg-transparent border-1"
-          value={settings()?.output_size.y}
+          class="w-12 bg-transparent border-2"
+          value={settings.output_size.y}
+          onChange={(e) =>
+            setSettings("output_size", "y", e.target.valueAsNumber)
+          }
         ></input>
       </div>
+      <div class="border-b border-2 border-white my-4 lg:w-full"></div>
+      <button
+        class="bg-blue-500 block rounded-md"
+        onClick={async () => {
+          if (!props.loading()) {
+            const bytes = await wangTileBytes(settings.image);
+            const wfcData = buildWfc(props.wfc()!, settings, bytes);
+            props.controller()!.load_wfc(wfcData);
+          }
+        }}
+      >
+        Apply
+      </button>
     </div>
   );
 }
@@ -236,14 +258,7 @@ declare global {
   }
 }
 
-interface WfcStore {
-  wfc: Wfc | undefined;
-  controller: WfcController | undefined;
-  isLoading: boolean;
-}
-
 async function init() {
-  // Wait for wasm module to load and be added to window
   const [wfc, setWfc] = createSignal<Wfc | undefined>();
   const [controller, setController] = createSignal<WfcController | undefined>();
   const [loading, setLoading] = createSignal<boolean>(true);
@@ -258,6 +273,8 @@ async function init() {
   );
 
   window.addEventListener("resize", (_e) => {
+    if (!controller()) return;
+
     let canvas_container = document.getElementById("canvas-container");
     if (!canvas_container) {
       console.error("canvas-container element not found!");
@@ -283,11 +300,13 @@ async function init() {
     // winit PhysicalSize units
     w = Math.round(w * r);
     h = Math.round(h * r);
-    controller()?.resize_canvas(w, h);
+    controller()!.resize_canvas(w, h);
   });
 
   // separated for type checking
+  // TODO: handle error case with reject()
   const wfcPromise: Promise<Wfc> = new Promise((resolve) => {
+    // Wait for wasm module to load
     const intervalId = setInterval(() => {
       console.log("waiting for wasm init");
       if (window.wasm !== undefined) {
@@ -296,6 +315,7 @@ async function init() {
       }
     }, 100);
   });
+  // TODO: put this in a createResource()
   wfcPromise
     .then((_wfc) => {
       console.log("wasm loaded");
