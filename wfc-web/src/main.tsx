@@ -43,7 +43,10 @@ function PlayControls(props: { controller: WfcController }) {
   const pause_bg = "bg-red-500";
 
   return (
-    <>
+    <div
+      id="play-controls"
+      class="z-50 bottom-0 flex flex-row justify-between my-2"
+    >
       <div id="left-play-controls">
         <button
           class={`${
@@ -65,7 +68,7 @@ function PlayControls(props: { controller: WfcController }) {
           />
         </button>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -159,7 +162,10 @@ function ConfigMenu(props: { wfc: Wfc; controller: WfcController }) {
     output_size: { x: 256, y: 256 },
   });
   return (
-    <>
+    <div
+      id="config-menu"
+      class="flex shrink flex-row lg:flex-col lg:ml-4 my-4 rounded-md border-2 text-white p-2"
+    >
       <PresetSelector
         wfc={wfc}
         controller={controller}
@@ -195,7 +201,7 @@ function ConfigMenu(props: { wfc: Wfc; controller: WfcController }) {
           value={settings.output_size.y}
         ></input>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -254,11 +260,11 @@ async function init() {
   });
   render(
     () => <PlayControls controller={controller} />,
-    document.getElementById("play-controls")!
+    document.getElementById("player")!
   );
   render(
     () => <ConfigMenu wfc={wfc} controller={controller} />,
-    document.getElementById("config-menu")!
+    document.getElementById("player+menu")!
   );
 
   console.log("Starting event-loop");
