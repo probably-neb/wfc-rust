@@ -1,11 +1,9 @@
 import { render } from "solid-js/web";
 import { createSignal, Show, createEffect, Accessor, Setter } from "solid-js";
 import { createStore } from "solid-js/store";
-// TODO: figure out how to use wasm bindgen to generate wfc-web.d.ts before webpack webpacks
 import type { WfcController, WfcData } from "./wfc-web.d.ts";
 import type * as WfcNamespace from "./wfc-web.d.ts";
 
-// TODO: figure out why this works
 type Wfc = typeof WfcNamespace;
 
 type ReloadFunc = () => Promise<void>;
@@ -42,9 +40,6 @@ function PlayControls(props: {
     />
   );
 
-  const playing_bg = "bg-green-500";
-  const pause_bg = "bg-red-500";
-
   return (
     <div
       id="play-controls"
@@ -53,7 +48,7 @@ function PlayControls(props: {
       <div id="left-play-controls">
         <button
           class={`${
-            playing() ? pause_bg : playing_bg
+            playing() ? "bg-red-500" : "bg-green-500" // red if playing for pause button and green if paused for play button
           } block rounded-md px-4 py-2`}
           onClick={toggle}
           id="play-pause"
