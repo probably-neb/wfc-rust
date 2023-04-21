@@ -1,14 +1,38 @@
 import { render } from "solid-js/web";
 import { createSignal, Show, createEffect, Accessor, Setter } from "solid-js";
 import { createStore } from "solid-js/store";
-// TODO: figure out how to use wasm bindgen to generate wfc-web.d.ts before webpack webpacks
 import type { WfcController, WfcData } from "./wfc-web.d.ts";
-import type * as WfcNamespace from "./wfc-web.d.ts";
 
-// TODO: figure out why this works
+import type * as WfcNamespace from "./wfc-web.d.ts";
 type Wfc = typeof WfcNamespace;
 
 type ReloadFunc = () => Promise<void>;
+
+interface PlayerSettings {
+  tile_size: number;
+  output_size: { x: number; y: number };
+  wang: boolean;
+  image: PresetImage;
+}
+
+type PresetImage = "dual" | "celtic";
+
+const DEFAULT_PRESET: PresetImage = "dual";
+
+const PRESET_SETTINGS: { [Key in PresetImage]: PlayerSettings } = {
+  dual: {
+    tile_size: 32,
+    output_size: { x: 256, y: 256 },
+    wang: true,
+    image: "dual",
+  },
+  celtic: {
+    tile_size: 32,
+    output_size: { x: 256, y: 256 },
+    wang: true,
+    image: "celtic",
+  },
+};
 
 function PlayControls(props: {
   controller: Accessor<WfcController | undefined>;
@@ -42,9 +66,6 @@ function PlayControls(props: {
     />
   );
 
-  const playing_bg = "bg-green-500";
-  const pause_bg = "bg-red-500";
-
   return (
     <div
       id="play-controls"
@@ -53,7 +74,7 @@ function PlayControls(props: {
       <div id="left-play-controls">
         <button
           class={`${
-            playing() ? pause_bg : playing_bg
+            playing() ? "bg-red-500" : "bg-green-500" // red if playing for pause button and green if paused for play button
           } block rounded-md px-4 py-2`}
           onClick={toggle}
           id="play-pause"
@@ -98,29 +119,6 @@ async function wangTileBytes(wang_tile: string): Promise<Uint8Array> {
     });
   return bytes;
 }
-
-interface PlayerSettings {
-  tile_size: number;
-  output_size: { x: number; y: number };
-  wang: boolean;
-  image: PresetImage;
-}
-type PresetImage = "dual" | "celtic";
-const DEFAULT_PRESET: PresetImage = "dual";
-const PRESET_SETTINGS: { [Key in PresetImage]: PlayerSettings } = {
-  dual: {
-    tile_size: 32,
-    output_size: { x: 256, y: 256 },
-    wang: true,
-    image: "dual",
-  },
-  celtic: {
-    tile_size: 32,
-    output_size: { x: 256, y: 256 },
-    wang: true,
-    image: "celtic",
-  },
-};
 
 function buildWfc(
   wfc: Wfc,
