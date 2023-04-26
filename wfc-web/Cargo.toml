@@ -3,29 +3,16 @@ name = "wfc-web"
 version = "0.1.0"
 edition = "2021"
 
-[build]
-target = "wasm32-unknown-unknown"
-
 [dependencies]
 wfc-lib = {path="../wfc-lib"}
 image = "0.24.4"
 glam = "0.22.0"
-rand = "0.8.5"
 winit = "0.27"
-pixels = "0.11.0"
-derive_more = {version = "0.99.17", default-features=false, features = [
-             "deref",
-             "deref_mut",
-             "index",
-             "index_mut",
-             "from",
-             "is_variant",
-]}
 log = "0.4"
 console_error_panic_hook = "0.1"
 console_log = "0.2"
 wasm-bindgen = { version = "0.2", features = ["serde-serialize"]}
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = ["GpuTextureFormat", "Event", "Window", "Document", "HtmlElement", "CssStyleDeclaration"] }
-winit_input_helper = "0.13"
-serde = { version = "1.0.159", features = ["derive"] }
+wgpu = {version="0.15", features=["webgl"]}
+thiserror = "1.0.40"

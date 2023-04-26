@@ -1,4 +1,0 @@
-[workspace]
-resolver = "2"
-members = ["wfc-lib", "wfc-web", "wfc-window"]
-default-members = ["wfc-window"]
