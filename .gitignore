@@ -11,3 +11,4 @@ wfc-web/dist
 .vercel
 wfc-web/node_modules
 wfc-web/tailwind.css
+wfc-web/target
