@@ -6,5 +6,5 @@ deploy-prev:
 	vercel deploy --prebuilt
 
 deploy-prod:
-	vercel build
+	vercel build --prod
 	vercel deploy --prebuilt --prod
