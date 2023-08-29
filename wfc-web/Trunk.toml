@@ -1,3 +1,6 @@
+[tools]
+wasm_bindgen = "0.2.87"
+
 # workaround: loads the wasm file and adds the bindings 
 # to window.wasm for access within js
 # https://github.com/thedodd/trunk/issues/298
