@@ -242,7 +242,7 @@ const PlayerSettingsMenu: FC<PlayerSettingsMenuProps> = (props) => {
     return (
         <div
             id="config-menu"
-            class="flex shrink flex-row lg:flex-col lg:ml-4 my-4 rounded-md border-2 text-white p-2"
+            class="flex shrink flex-row lg:flex-col rounded-md border-2 text-white p-2"
         >
             <PresetSelector
                 wfc={props.wfc}
@@ -297,6 +297,26 @@ const PlayerSettingsMenu: FC<PlayerSettingsMenuProps> = (props) => {
     );
 }
 
+interface PlayerMenuProps {
+    controller: Accessor<WfcController | undefined>;
+    loading: Accessor<boolean>;
+    wfc: Accessor<Wfc | undefined>;
+    reload: Accessor<ReloadFunc>;
+    setReload: Setter<ReloadFunc>;
+}
+
+const PlayerMenu: FC<PlayerMenuProps> = ({wfc, controller, loading, reload, setReload}) => {
+    return <div class="mx-4">
+            <PlayerSettingsMenu
+                wfc={wfc}
+                controller={controller}
+                loading={loading}
+                setReloadFunc={setReload}
+            />
+            <PlayControls controller={controller} reload={reload} />
+    </div>
+}
+
 declare global {
     interface Window {
         // script? in Trunk.toml initializes wasm and adds binding
@@ -317,19 +337,8 @@ async function init() {
     );
 
     render(
-        () => <PlayControls controller={controller} reload={reloadFunc} />,
-        document.getElementById("player-control-bar")!
-    );
-    render(
-        () => (
-            <PlayerSettingsMenu
-                wfc={wfc}
-                controller={controller}
-                loading={loading}
-                setReloadFunc={setReloadFunc}
-            />
-        ),
-        document.getElementById("player-settings-menu")!
+        () => <PlayerMenu controller={controller} reload={reloadFunc} setReload={setReloadFunc} wfc={wfc} loading={loading} />,
+        document.getElementById("player-menu")!
     );
 
     window.addEventListener("resize", (_e) => {
