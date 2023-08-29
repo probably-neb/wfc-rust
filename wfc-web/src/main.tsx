@@ -83,7 +83,7 @@ const PlayPauseButton: FC = () => {
 };
 
 function PlayControls() {
-    const [,{ setPlaying, reload: _reload }] = usePlayerContext();
+    const [, { setPlaying, reload: _reload }] = usePlayerContext();
 
     const reload = () => {
         setPlaying(false);
@@ -139,14 +139,15 @@ async function loadPresetImage(preset_name: PresetImage): Promise<Uint8Array> {
     return bytes;
 }
 
-const PresetSelector: FC = (props) => {
+const PresetSelector: FC<{setPlayerSettings: (s: PlayerSettings) => void}> = (props) => {
     const [{ wfc }, { loadWfc }] = usePlayerContext();
     const [preset, setPreset] = createSignal<PresetImage | null>(null);
     createEffect(async () => {
         let p = preset();
         if (p) {
             const settings = PRESET_SETTINGS[p];
-
+            // apply settings to player version of settings
+            props.setPlayerSettings(settings);
 
             console.log("Selected preset:", p);
             // TODO: put image loading in a createResource()
@@ -167,7 +168,7 @@ const PresetSelector: FC = (props) => {
             <label for="presets">Presets</label>
             <select
                 id="presets"
-                class="border-2 text-white bg-transparent rounded-sm p-1"
+                class="border-2 text-white bg-gray-500 rounded-sm p-1"
                 onChange={(e) => setPreset(e.target!.value as PresetImage)}
                 value={preset() || undefined}
             >
@@ -180,78 +181,98 @@ const PresetSelector: FC = (props) => {
 };
 
 const Divider: FC = () => {
-    return <div class="border-b border-2 border-white my-4 lg:w-full"></div>;
+    return (
+        <>
+    <div class="lg:hidden w-px border-l-2 border-white"></div>
+    <div class="hidden lg:block h-px border-b-2 border-white w-full my-3"></div>
+        </>
+    );
+};
+
+const PlayerSettingsSection: FC<{ children: JSX.Element; title?: string }> = (
+    props
+) => {
+    return (
+        <div class="flex flex-col text-2xl lg:text-base">
+            {props.title && (
+                <span>
+                    <b>{props.title}</b>
+                </span>
+            )}
+            {props.children}
+        </div>
+    );
 };
 
 const PlayerSettingsMenu: FC = () => {
-    let [ctx, {loadWfc}] = usePlayerContext();
+    let [ctx, { loadWfc }] = usePlayerContext();
     // copy of settings so reset button can reset to original settings
     // not sure if the unwrap is necessary
-    let [settings, setSettings] = createStore(unwrap(ctx).settings);
+    let [settings, setSettings] = createStore(ctx.settings);
 
     const applyChanges = async () => {
         let bytes = await loadPresetImage(settings.image);
         loadWfc(bytes, settings);
-    }
+    };
 
     // TODO: resize text in input field text boxes on overflow
     // TODO: make `input` component that does ^ and other repeated logic below
     return (
         <div
             id="config-menu"
-            class="flex shrink flex-row lg:flex-col rounded-md border-2 text-white p-2"
+            class="flex flex-row lg:flex-col justify-around rounded-md border-2 text-white p-2"
         >
-            <PresetSelector />
+            <PlayerSettingsSection>
+                <PresetSelector setPlayerSettings={setSettings}/>
+            </PlayerSettingsSection>
             <Divider />
-            <span>
-                <b>Preprocessor Settings</b>
-            </span>
-            <div class="flex-row">
-                <span class="mr-1">Tile Size:</span>
-                <input
-                    type="number"
-                    class="w-10 bg-transparent border-2 truncate hover:whitespace-normal"
-                    value={settings.tile_size}
-                    onChange={(e) =>
-                        setSettings("tile_size", e.target.valueAsNumber)
-                    }
-                ></input>
-            </div>
+            <PlayerSettingsSection title="Preprocessor Settings">
+                <div>
+                    <span class="mr-1">Tile Size:</span>
+                    <input
+                        type="number"
+                        class="w-10 bg-transparent border-[1px] truncate hover:whitespace-normal"
+                        value={settings.tile_size}
+                        onChange={(e) =>
+                            setSettings("tile_size", e.target.valueAsNumber)
+                        }
+                    ></input>
+                </div>
+            </PlayerSettingsSection>
             <Divider />
-            <span>
-                <b>Model Settings</b>
-            </span>
-            <div class="flex-row">
-                <span class="mr-1">Output Size:</span>
-                <input
-                    type="number"
-                    class="w-12 bg-transparent border-2"
-                    value={settings.output_dimensions.x}
-                    onChange={(e) =>
-                        setSettings(
-                            "output_dimensions",
-                            "x",
-                            e.target.valueAsNumber
-                        )
-                    }
-                ></input>
-                <span class="mx-1">x</span>
-                <input
-                    type="number"
-                    class="w-12 bg-transparent border-2"
-                    value={settings.output_dimensions.y}
-                    onChange={(e) =>
-                        setSettings(
-                            "output_dimensions",
-                            "y",
-                            e.target.valueAsNumber
-                        )
-                    }
-                ></input>
-            </div>
+            <PlayerSettingsSection title="Model Settings">
+                <div>
+                    <span class="mr-1">Output Size:</span>
+                    <input
+                        type="number"
+                        class="w-12 bg-transparent border-[1px]"
+                        value={settings.output_dimensions.x}
+                        onChange={(e) =>
+                            setSettings(
+                                "output_dimensions",
+                                "x",
+                                e.target.valueAsNumber
+                            )
+                        }
+                    ></input>
+                    <span class="mx-1">x</span>
+                    <input
+                        type="number"
+                        class="w-12 bg-transparent border-[1px]"
+                        value={settings.output_dimensions.y}
+                        onChange={(e) =>
+                            setSettings(
+                                "output_dimensions",
+                                "y",
+                                e.target.valueAsNumber
+                            )
+                        }
+                    ></input>
+                </div>
+            </PlayerSettingsSection>
             <Divider />
-            <button class="bg-blue-500 block rounded-md" onClick={applyChanges}>
-                Apply
+            <button class="bg-blue-500 rounded-md" onClick={applyChanges}>
+                <span class="p-2 text-xl">Apply</span>
             </button>
         </div>
     );
@@ -322,10 +343,12 @@ async function init() {
                 context[1].loadWfc(bytes, state.settings);
             },
             loadWfc(bytes: Uint8Array, settings: PlayerSettings) {
-                setState(produce((s) => {
-                    s.settings = settings;
-                    s.image = bytes;
-                }))
+                setState(
+                    produce((s) => {
+                        s.settings = settings;
+                        s.image = bytes;
+                    })
+                );
                 let wasm_ = wasm();
                 if (wasm_.loading) {
                     return;
@@ -340,7 +363,7 @@ async function init() {
                 state.wfc.controller.load_wfc(wfcData);
                 state.wfc.controller.set_done_callback(() => {
                     setState("playing", false);
-                })
+                });
             },
             setPlaying(playing: boolean) {
                 console.log("setPlaying", playing);
