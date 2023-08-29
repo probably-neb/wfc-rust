@@ -162,19 +162,19 @@ export interface InitOutput {
   readonly __wbindgen_malloc: (a: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number) => number;
   readonly __wbindgen_export_2: WebAssembly.Table;
-  readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h11d1bc0e553919e3: (a: number, b: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hf88664cec4469c3e: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h397e938db2513962: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hf3c2ac5a5a94a443: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h13abde59c6df99a8: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hf6fa4138879193c5: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hf320889445a20919: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hd419a3156a30c0e7: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hdd1bcbccbb047dbf: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hb631fd222f0e0d32: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hafc44e939313caf4: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h81ca3c87e0745556: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h202ef82e6634bee5: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hf08b65b5e307d78c: (a: number, b: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hb88e78373b4ffe67: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h50a9b473f520e560: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h382d62ba7e557a4a: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h0059a51c06ef861c: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h1d194ca94d7e984e: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h887b63adf429e02c: (a: number, b: number, c: number) => void;
   readonly __wbindgen_free: (a: number, b: number) => void;
   readonly __wbindgen_exn_store: (a: number) => void;
-  readonly wasm_bindgen__convert__closures__invoke2_mut__h81dfd6a97efe3aef: (a: number, b: number, c: number, d: number) => void;
+  readonly wasm_bindgen__convert__closures__invoke2_mut__h04938ace5aa6484d: (a: number, b: number, c: number, d: number) => void;
   readonly __wbindgen_start: () => void;
 }
 

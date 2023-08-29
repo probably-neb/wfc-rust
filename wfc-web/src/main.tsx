@@ -15,11 +15,10 @@ interface PlayerSettings {
   image: PresetImage;
 }
 
-type PresetImage = "dual" | "celtic";
 
 const DEFAULT_PRESET: PresetImage = "dual";
 
-const PRESET_SETTINGS: { [Key in PresetImage]: PlayerSettings } = {
+const PRESET_SETTINGS: Record<string, PlayerSettings> = {
   dual: {
     tile_size: 32,
     output_size: { x: 256, y: 256 },
@@ -32,7 +31,15 @@ const PRESET_SETTINGS: { [Key in PresetImage]: PlayerSettings } = {
     wang: true,
     image: "celtic",
   },
+  corners: {
+        tile_size: 3,
+        output_size: { x: 256, y: 256 },
+        wang: false,
+        image: "corners",
+    }
 };
+
+type PresetImage = keyof typeof PRESET_SETTINGS;
 
 function PlayControls(props: {
   controller: Accessor<WfcController | undefined>;
@@ -100,8 +107,9 @@ function PlayControls(props: {
   );
 }
 
-async function wangTileBytes(wang_tile: string): Promise<Uint8Array> {
-  const path = `./assets/wang/${wang_tile}.png`;
+async function loadPresetImage(preset_name: PresetImage): Promise<Uint8Array> {
+  const preset = PRESET_SETTINGS[preset_name];
+  const path = `./assets/${preset.wang ? "wang" : "non-wang"}/${preset.image}.png`;
   const bytes: Uint8Array = await fetch(path)
     .then((response) => response.blob())
     .then((blob) => {
@@ -140,10 +148,7 @@ function PresetSelector(props: {
   setSettings: (arg0: PlayerSettings) => void;
 }) {
   const { wfc, controller, loading } = props;
-  const [preset, setPresetSignal]: [
-    () => PresetImage | null,
-    (p: PresetImage) => void
-  ] = createSignal(null);
+  const [preset, setPreset] = createSignal<PresetImage | null>(null);
   createEffect(async () => {
     if (preset()) {
       const settings = PRESET_SETTINGS[preset()!];
@@ -152,7 +157,7 @@ function PresetSelector(props: {
       if (!loading()) {
         console.log("Selected preset:", preset()!);
         // TODO: put image loading in a createResource()
-        const bytes = await wangTileBytes(settings.image);
+        const bytes = await loadPresetImage(settings.image);
         const wfcData = buildWfc(wfc()!, settings, bytes);
         controller()!.load_wfc(wfcData);
       } else {
@@ -163,7 +168,7 @@ function PresetSelector(props: {
   // set preset once wasm is done loading
   createEffect(() => {
     if (!loading()) {
-      setPresetSignal(DEFAULT_PRESET);
+      setPreset(DEFAULT_PRESET);
     }
   });
   // TODO: add button toggle to set whether to load preset settings
@@ -174,11 +179,12 @@ function PresetSelector(props: {
       <select
         id="presets"
         class="border-2 text-white bg-transparent rounded-sm p-1"
-        onChange={(e) => setPresetSignal(e.target!.value as PresetImage)}
+        onChange={(e) => setPreset(e.target!.value as PresetImage)}
         value={preset() || undefined}
       >
-        <option value="dual">Dual</option>
-        <option value="celtic">Celtic</option>
+        {Object.keys(PRESET_SETTINGS).map((preset) => (
+            <option value={preset}>{preset}</option>
+        ))}
       </select>
     </>
   );
@@ -195,7 +201,7 @@ function PlayerSettingsMenu(props: {
   async function loadWfc() {
     if (!props.loading()) {
       console.log("loading:", settings.image);
-      const bytes = await wangTileBytes(settings.image);
+      const bytes = await loadPresetImage(settings.image);
       const wfcData = buildWfc(props.wfc()!, settings, bytes);
       props.controller()!.load_wfc(wfcData);
     }
