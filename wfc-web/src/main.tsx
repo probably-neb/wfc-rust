@@ -4,42 +4,37 @@ import {
     Show,
     createEffect,
     Accessor,
-    Setter,
     Component as FC,
+    createContext,
+    JSX,
+    useContext,
 } from "solid-js";
-import { createStore } from "solid-js/store";
-import type { WfcController, WfcData } from "./wfc-web.d.ts";
+import { createStore, produce } from "solid-js/store";
+import type { WfcController, WfcData, PlayerSettings } from "./wfc-web.d.ts";
 
 import type * as WfcNamespace from "./wfc-web.d.ts";
 type Wfc = typeof WfcNamespace;
 
 type ReloadFunc = () => Promise<void>;
 
-interface PlayerSettings {
-    tile_size: number;
-    output_size: { x: number; y: number };
-    wang: boolean;
-    image: PresetImage;
-}
-
 const DEFAULT_PRESET: PresetImage = "dual";
 
 const PRESET_SETTINGS: Record<string, PlayerSettings> = {
     dual: {
         tile_size: 32,
-        output_size: { x: 256, y: 256 },
+        output_dimensions: { x: 256, y: 256 },
         wang: true,
         image: "dual",
     },
     celtic: {
         tile_size: 32,
-        output_size: { x: 256, y: 256 },
+        output_dimensions: { x: 256, y: 256 },
         wang: true,
         image: "celtic",
     },
     corners: {
         tile_size: 3,
-        output_size: { x: 60, y: 60 },
+        output_dimensions: { x: 60, y: 60 },
         wang: false,
         image: "corners",
     },
@@ -83,20 +78,18 @@ const PlayPauseButton: FC<PlayPauseButtonProps> = ({ playing, toggle }) => {
     );
 };
 
-function PlayControls(props: {
-    controller: Accessor<WfcController | undefined>;
-    reload: Accessor<ReloadFunc>;
-}) {
+function PlayControls() {
+    const [{ wfc, reload: _reload }] = usePlayerContext();
     // NOTE: playing implies pause icon and vice versa
     const [playing, setPlaying] = createSignal(false);
 
     const toggle = () => {
         setPlaying(!playing());
-        props.controller()?.toggle_playing();
+        if (!wfc.loading) wfc.controller.toggle_playing();
     };
     const reload = () => {
         setPlaying(false);
-        props.reload()();
+        _reload();
     };
 
     return (
@@ -148,40 +141,25 @@ async function loadPresetImage(preset_name: PresetImage): Promise<Uint8Array> {
     return bytes;
 }
 
-function buildWfc(
-    wfc: Wfc,
-    settings: PlayerSettings,
-    imageBytes: Uint8Array
-): WfcData {
-    const wfcData: WfcData = wfc.WfcWebBuilder.new_from_image_bytes(imageBytes)
-        .with_tile_size(settings.tile_size)
-        .with_output_dimensions(settings.output_size.x, settings.output_size.y)
-        .wang(settings.wang)
-        .build();
-    return wfcData;
-}
-
 interface PresetSelectorProps {
-    wfc: Accessor<Wfc | undefined>;
-    controller: Accessor<WfcController | undefined>;
-    loading: Accessor<boolean>;
     setSettings: (arg0: PlayerSettings) => void;
 }
 
 const PresetSelector: FC<PresetSelectorProps> = (props) => {
-    const { wfc, controller, loading } = props;
+    const [{ wfc }, {startWfc}] = usePlayerContext();
     const [preset, setPreset] = createSignal<PresetImage | null>(null);
     createEffect(async () => {
-        if (preset()) {
-            const settings = PRESET_SETTINGS[preset()!];
+        let p = preset();
+        if (p) {
+            const settings = PRESET_SETTINGS[p];
             props.setSettings(settings);
 
-            if (!loading()) {
-                console.log("Selected preset:", preset()!);
+            if (!wfc.loading) {
+                console.log("Selected preset:", p);
                 // TODO: put image loading in a createResource()
-                const bytes = await loadPresetImage(settings.image);
-                const wfcData = buildWfc(wfc()!, settings, bytes);
-                controller()!.load_wfc(wfcData);
+                let image = await loadPresetImage(p);
+                startWfc(image, settings)
+
             } else {
                 console.log("wfc not loaded");
             }
@@ -189,7 +167,7 @@ const PresetSelector: FC<PresetSelectorProps> = (props) => {
     });
     // set preset once wasm is done loading
     createEffect(() => {
-        if (!loading()) {
+        if (!wfc.loading) {
             setPreset(DEFAULT_PRESET);
         }
     });
@@ -214,29 +192,22 @@ const PresetSelector: FC<PresetSelectorProps> = (props) => {
 
 const Divider: FC = () => {
     return <div class="border-b border-2 border-white my-4 lg:w-full"></div>;
-}
+};
 
+const PlayerSettingsMenu: FC = () => {
+    let [{ wfc }, { setReload, startWfc }] = usePlayerContext();
 
-interface PlayerSettingsMenuProps {
-    wfc: Accessor<Wfc | undefined>;
-    controller: Accessor<WfcController | undefined>;
-    loading: Accessor<boolean>;
-    setReloadFunc: Setter<ReloadFunc>;
-}
-
-const PlayerSettingsMenu: FC<PlayerSettingsMenuProps> = (props) => {
     const [settings, setSettings] = createStore<PlayerSettings>(
         PRESET_SETTINGS[DEFAULT_PRESET]
     );
     async function loadWfc() {
-        if (!props.loading()) {
+        if (!wfc.loading) {
             console.log("loading:", settings.image);
             const bytes = await loadPresetImage(settings.image);
-            const wfcData = buildWfc(props.wfc()!, settings, bytes);
-            props.controller()!.load_wfc(wfcData);
+            startWfc(bytes, settings);
         }
     }
-    props.setReloadFunc((_prev) => loadWfc);
+    setReload(loadWfc);
     // TODO: resize text in input field text boxes on overflow
     // TODO: make `input` component that does ^ and other repeated logic below
     return (
@@ -244,12 +215,7 @@ const PlayerSettingsMenu: FC<PlayerSettingsMenuProps> = (props) => {
             id="config-menu"
             class="flex shrink flex-row lg:flex-col rounded-md border-2 text-white p-2"
         >
-            <PresetSelector
-                wfc={props.wfc}
-                controller={props.controller}
-                loading={props.loading}
-                setSettings={setSettings}
-            />
+            <PresetSelector setSettings={setSettings} />
             <Divider />
             <span>
                 <b>Preprocessor Settings</b>
@@ -274,18 +240,18 @@ const PlayerSettingsMenu: FC<PlayerSettingsMenuProps> = (props) => {
                 <input
                     type="number"
                     class="w-12 bg-transparent border-2"
-                    value={settings.output_size.x}
+                    value={settings.output_dimensions.x}
                     onChange={(e) =>
-                        setSettings("output_size", "x", e.target.valueAsNumber)
+                        setSettings("output_dimensions", "x", e.target.valueAsNumber)
                     }
                 ></input>
                 <span class="mx-1">x</span>
                 <input
                     type="number"
                     class="w-12 bg-transparent border-2"
-                    value={settings.output_size.y}
+                    value={settings.output_dimensions.y}
                     onChange={(e) =>
-                        setSettings("output_size", "y", e.target.valueAsNumber)
+                        setSettings("output_dimensions", "y", e.target.valueAsNumber)
                     }
                 ></input>
             </div>
@@ -295,27 +261,48 @@ const PlayerSettingsMenu: FC<PlayerSettingsMenuProps> = (props) => {
             </button>
         </div>
     );
+};
+
+const PlayerMenu: FC = () => {
+    return (
+        <div class="mx-4">
+            <PlayerSettingsMenu />
+            <PlayControls />
+        </div>
+    );
+};
+
+type WfcInterface =
+    | {
+          loading: true;
+      }
+    | {
+          loading: false;
+          controller: WfcController;
+      };
+
+interface PlayerContextState {
+    reload: ReloadFunc;
+    wfc: WfcInterface;
 }
 
-interface PlayerMenuProps {
-    controller: Accessor<WfcController | undefined>;
-    loading: Accessor<boolean>;
-    wfc: Accessor<Wfc | undefined>;
-    reload: Accessor<ReloadFunc>;
-    setReload: Setter<ReloadFunc>;
+interface PlayerContextApi {
+    setReload: (arg0: ReloadFunc) => void;
+    startWfc: (arg0: Uint8Array, arg1: PlayerSettings) => void;
 }
 
-const PlayerMenu: FC<PlayerMenuProps> = ({wfc, controller, loading, reload, setReload}) => {
-    return <div class="mx-4">
-            <PlayerSettingsMenu
-                wfc={wfc}
-                controller={controller}
-                loading={loading}
-                setReloadFunc={setReload}
-            />
-            <PlayControls controller={controller} reload={reload} />
-    </div>
-}
+type PlayerContextTuple = [PlayerContextState, PlayerContextApi];
+
+const PlayerContext = createContext<PlayerContextTuple>();
+
+const usePlayerContext = () => {
+    const ctx = useContext(PlayerContext);
+    if (!ctx)
+        throw new Error(
+            "usePlayerContext must be used within a PlayerContextProvider"
+        );
+    return ctx;
+};
 
 declare global {
     interface Window {
@@ -327,22 +314,47 @@ declare global {
 }
 
 async function init() {
-    const [wfc, setWfc] = createSignal<Wfc | undefined>();
-    const [controller, setController] = createSignal<
-        WfcController | undefined
-    >();
-    const [loading, setLoading] = createSignal<boolean>(true);
-    const [reloadFunc, setReloadFunc] = createSignal<ReloadFunc>(
-        async () => {}
-    );
+    type WasmInterface = { loading: true } | { loading: false; wfc: Wfc };
+    const [wasm, setWasm] = createSignal<WasmInterface>({ loading: true });
+    const [state, setState] = createStore<PlayerContextState>({
+        wfc: { loading: true },
+        reload: async () => {},
+    });
+    const context: PlayerContextTuple = [
+        state,
+        {
+            setReload(f: ReloadFunc) {
+                setState("reload", f);
+            },
+            startWfc(bytes: Uint8Array, settings: PlayerSettings) {
+                let wasm_ = wasm();
+                if (wasm_.loading) {
+                    return;
+                }
+                let wfcData = wasm_.wfc.WfcWebBuilder.build_from_json_settings(
+                    bytes,
+                    settings
+                );
+                if (state.wfc.loading) {
+                    return;
+                }
+                state.wfc.controller.load_wfc(wfcData);
+            },
+        },
+    ];
 
     render(
-        () => <PlayerMenu controller={controller} reload={reloadFunc} setReload={setReloadFunc} wfc={wfc} loading={loading} />,
+        () => (
+            <PlayerContext.Provider value={context}>
+                <PlayerMenu />
+            </PlayerContext.Provider>
+        ),
         document.getElementById("player-menu")!
     );
 
     window.addEventListener("resize", (_e) => {
-        if (!controller()) return;
+        if (state.wfc.loading) return;
+        let controller = state.wfc.controller;
 
         let canvas_container = document.getElementById("canvas-container");
         if (!canvas_container) {
@@ -369,7 +381,7 @@ async function init() {
         // winit PhysicalSize units
         w = Math.round(w * r);
         h = Math.round(h * r);
-        controller()!.resize_canvas(w, h);
+        controller.resize_canvas(w, h);
     });
 
     // separated for type checking
@@ -386,17 +398,13 @@ async function init() {
     });
     // TODO: put this in a createResource()
     wfcPromise
-        .then((_wfc) => {
+        .then(async (wasm_) => {
             console.log("wasm loaded");
-            setWfc(_wfc);
-            return _wfc;
-        })
-        .then(async (_wfc) => {
-            const display = await _wfc.WfcWindow.new();
-            const controller = _wfc.WfcController.init(display);
+            const display = await wasm_.WfcWindow.new();
+            const controller = wasm_.WfcController.init(display);
             console.log("attaching window");
-            setController(controller);
-            setLoading(false);
+            setWasm({ loading: false, wfc: wasm_ })
+            setState("wfc", { loading: false, controller });
             return display;
         })
         .then((display) => {

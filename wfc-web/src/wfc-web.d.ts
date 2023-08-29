@@ -28,6 +28,10 @@ export class WfcController {
 * @param {number} h
 */
   resize_canvas(w: number, h: number): void;
+/**
+* @param {Function} callback
+*/
+  set_done_callback(callback: Function): void;
 }
 /**
 */
@@ -39,41 +43,11 @@ export class WfcData {
 export class WfcWebBuilder {
   free(): void;
 /**
-* @param {Uint8Array} raw_data
-* @returns {WfcWebBuilder}
-*/
-  static new_from_image_bytes(raw_data: Uint8Array): WfcWebBuilder;
-/**
-* @param {number} x
-* @param {number} y
-* @returns {WfcWebBuilder}
-*/
-  with_output_dimensions(x: number, y: number): WfcWebBuilder;
-/**
-* @param {number} tile_size
-* @returns {WfcWebBuilder}
-*/
-  with_tile_size(tile_size: number): WfcWebBuilder;
-/**
-* @returns {WfcWebBuilder}
-*/
-  wrap(): WfcWebBuilder;
-/**
-* @param {boolean | undefined} val
-* @returns {WfcWebBuilder}
-*/
-  wang(val?: boolean): WfcWebBuilder;
-/**
-* @returns {WfcWebBuilder}
-*/
-  wang_flip(): WfcWebBuilder;
-/**
-*/
-  process_image(): void;
-/**
+* @param {Uint8Array} image_bytes
+* @param {any} settings
 * @returns {WfcData}
 */
-  build(): WfcData;
+  static build_from_json_settings(image_bytes: Uint8Array, settings: any): WfcData;
 }
 /**
 */
@@ -97,20 +71,14 @@ export interface InitOutput {
   readonly wfcwindow_new: () => number;
   readonly wfcwindow_start_event_loop: (a: number) => void;
   readonly __wbg_wfcwebbuilder_free: (a: number) => void;
-  readonly wfcwebbuilder_new_from_image_bytes: (a: number, b: number) => number;
-  readonly wfcwebbuilder_with_output_dimensions: (a: number, b: number, c: number) => number;
-  readonly wfcwebbuilder_with_tile_size: (a: number, b: number) => number;
-  readonly wfcwebbuilder_wrap: (a: number) => number;
-  readonly wfcwebbuilder_wang: (a: number, b: number) => number;
-  readonly wfcwebbuilder_wang_flip: (a: number) => number;
-  readonly wfcwebbuilder_process_image: (a: number) => void;
-  readonly wfcwebbuilder_build: (a: number) => number;
+  readonly wfcwebbuilder_build_from_json_settings: (a: number, b: number, c: number) => number;
   readonly __wbg_wfccontroller_free: (a: number) => void;
   readonly wfccontroller_init: (a: number) => number;
   readonly wfccontroller_toggle_playing: (a: number) => void;
   readonly wfccontroller_load_wfc: (a: number, b: number) => void;
   readonly wfccontroller_start_wfc: (a: number) => void;
   readonly wfccontroller_resize_canvas: (a: number, b: number, c: number) => void;
+  readonly wfccontroller_set_done_callback: (a: number, b: number) => void;
   readonly main: (a: number, b: number) => number;
   readonly wgpu_compute_pass_set_pipeline: (a: number, b: number) => void;
   readonly wgpu_compute_pass_set_bind_group: (a: number, b: number, c: number, d: number, e: number) => void;
@@ -153,28 +121,28 @@ export interface InitOutput {
   readonly wgpu_render_bundle_draw_indexed: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
   readonly wgpu_render_bundle_draw_indirect: (a: number, b: number, c: number) => void;
   readonly wgpu_render_bundle_draw_indexed_indirect: (a: number, b: number, c: number) => void;
+  readonly wgpu_render_pass_set_index_buffer: (a: number, b: number, c: number, d: number, e: number) => void;
+  readonly wgpu_render_pass_execute_bundles: (a: number, b: number, c: number) => void;
   readonly wgpu_render_bundle_set_index_buffer: (a: number, b: number, c: number, d: number, e: number) => void;
   readonly wgpu_render_bundle_push_debug_group: (a: number, b: number) => void;
   readonly wgpu_render_bundle_pop_debug_group: (a: number) => void;
   readonly wgpu_render_bundle_insert_debug_marker: (a: number, b: number) => void;
-  readonly wgpu_render_pass_set_index_buffer: (a: number, b: number, c: number, d: number, e: number) => void;
-  readonly wgpu_render_pass_execute_bundles: (a: number, b: number, c: number) => void;
-  readonly __wbindgen_malloc: (a: number) => number;
-  readonly __wbindgen_realloc: (a: number, b: number, c: number) => number;
+  readonly __wbindgen_malloc: (a: number, b: number) => number;
+  readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
   readonly __wbindgen_export_2: WebAssembly.Table;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hafc44e939313caf4: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h81ca3c87e0745556: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h202ef82e6634bee5: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hf08b65b5e307d78c: (a: number, b: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hb88e78373b4ffe67: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h50a9b473f520e560: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h382d62ba7e557a4a: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h0059a51c06ef861c: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h1d194ca94d7e984e: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h887b63adf429e02c: (a: number, b: number, c: number) => void;
-  readonly __wbindgen_free: (a: number, b: number) => void;
+  readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h457d1c99d59f1947: (a: number, b: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h4bb5f6c7fe065bdb: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h3e25bb7bddeece96: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hf4db3e5a5492cde6: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__he980e1de97ada8f0: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hffee2228a7b8cda8: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h0f4838c3aacb4dea: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h40cfe7410bec92b9: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__ha91611e7a0871ed7: (a: number, b: number, c: number) => void;
+  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h57f5c5351e04ef77: (a: number, b: number, c: number) => void;
+  readonly __wbindgen_free: (a: number, b: number, c: number) => void;
   readonly __wbindgen_exn_store: (a: number) => void;
-  readonly wasm_bindgen__convert__closures__invoke2_mut__h04938ace5aa6484d: (a: number, b: number, c: number, d: number) => void;
+  readonly wasm_bindgen__convert__closures__invoke2_mut__h0df854e14539e938: (a: number, b: number, c: number, d: number) => void;
   readonly __wbindgen_start: () => void;
 }
 
@@ -197,4 +165,4 @@ export function initSync(module: SyncInitInput): InitOutput;
 *
 * @returns {Promise<InitOutput>}
 */
-export default function init (module_or_path?: InitInput | Promise<InitInput>): Promise<InitOutput>;
+export default function __wbg_init (module_or_path?: InitInput | Promise<InitInput>): Promise<InitOutput>;
