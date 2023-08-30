@@ -139,7 +139,9 @@ async function loadPresetImage(preset_name: PresetImage): Promise<Uint8Array> {
     return bytes;
 }
 
-const PresetSelector: FC<{setPlayerSettings: (s: PlayerSettings) => void}> = (props) => {
+const PresetSelector: FC<{ setPlayerSettings: (s: PlayerSettings) => void }> = (
+    props
+) => {
     const [{ wfc }, { loadWfc }] = usePlayerContext();
     const [preset, setPreset] = createSignal<PresetImage | null>(null);
     createEffect(async () => {
@@ -183,8 +185,8 @@ const PresetSelector: FC<{setPlayerSettings: (s: PlayerSettings) => void}> = (pr
 const Divider: FC = () => {
     return (
         <>
-    <div class="lg:hidden w-px border-l-2 border-white"></div>
-    <div class="hidden lg:block h-px border-b-2 border-white w-full my-3"></div>
+            <div class="lg:hidden w-px border-l-2 border-white"></div>
+            <div class="hidden lg:block h-px border-b-2 border-white w-full my-3"></div>
         </>
     );
 };
@@ -223,7 +225,7 @@ const PlayerSettingsMenu: FC = () => {
             class="flex flex-row lg:flex-col justify-around rounded-md border-2 text-white p-2"
         >
             <PlayerSettingsSection>
-                <PresetSelector setPlayerSettings={setSettings}/>
+                <PresetSelector setPlayerSettings={setSettings} />
             </PlayerSettingsSection>
             <Divider />
             <PlayerSettingsSection title="Preprocessor Settings">
@@ -361,17 +363,16 @@ async function init() {
                     return;
                 }
                 state.wfc.controller.load_wfc(wfcData);
+                context[1].setPlaying(false);
                 state.wfc.controller.set_done_callback(() => {
                     setState("playing", false);
                 });
             },
             setPlaying(playing: boolean) {
                 console.log("setPlaying", playing);
-                setState("playing", (was_playing) => {
-                    if (!state.wfc.loading && was_playing !== playing)
-                        state.wfc.controller.toggle_playing();
-                    return playing;
-                });
+                if (!state.wfc.loading)
+                    state.wfc.controller.set_playing(playing);
+                setState("playing", playing);
             },
             setState,
         },

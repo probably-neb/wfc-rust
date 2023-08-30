@@ -14,8 +14,9 @@ export class WfcController {
 */
   static init(display: WfcWindow): WfcController;
 /**
+* @param {boolean} playing
 */
-  toggle_playing(): void;
+  set_playing(playing: boolean): void;
 /**
 * @param {WfcData} data
 */
@@ -74,7 +75,7 @@ export interface InitOutput {
   readonly wfcwebbuilder_build_from_json_settings: (a: number, b: number, c: number) => number;
   readonly __wbg_wfccontroller_free: (a: number) => void;
   readonly wfccontroller_init: (a: number) => number;
-  readonly wfccontroller_toggle_playing: (a: number) => void;
+  readonly wfccontroller_set_playing: (a: number, b: number) => void;
   readonly wfccontroller_load_wfc: (a: number, b: number) => void;
   readonly wfccontroller_start_wfc: (a: number) => void;
   readonly wfccontroller_resize_canvas: (a: number, b: number, c: number) => void;

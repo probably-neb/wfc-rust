@@ -110,9 +110,9 @@ impl WfcWindow {
                     // TODO: catch this error
                     let _ = self.pixels.resize_surface(size.width, size.height);
                 }
-                winit::event::Event::UserEvent(WfcEvent::TogglePlaying) => {
+                winit::event::Event::UserEvent(WfcEvent::SetPlaying(new_playing)) => {
                     if cur_model_data.is_some() {
-                        playing = !playing;
+                        playing = new_playing;
                     }
                 }
                 winit::event::Event::UserEvent(WfcEvent::SetDoneCallback(cb)) => {
@@ -291,7 +291,7 @@ impl WfcWebBuilder {
 }
 
 enum WfcEvent {
-    TogglePlaying,
+    SetPlaying(bool),
     LoadWfc(WfcData),
     StartWfc,
     CanvasResize(winit::dpi::PhysicalSize<u32>),
@@ -318,10 +318,10 @@ impl WfcController {
         return Self { event_loop_proxy };
     }
 
-    pub fn toggle_playing(&self) {
+    pub fn set_playing(&self, playing: bool) {
         // Ignore result.
         // throws if event loop is not running, in which case do nothing
-        let _ = self.event_loop_proxy.send_event(WfcEvent::TogglePlaying);
+        let _ = self.event_loop_proxy.send_event(WfcEvent::SetPlaying(playing));
     }
 
     pub fn load_wfc(&self, data: WfcData) {
