@@ -1,6 +1,6 @@
 use std::{
     cmp::{Ordering, Reverse},
-    collections::BinaryHeap,
+    collections::{BinaryHeap, hash_map::RandomState},
     iter::{repeat, zip},
     ops::{Index, IndexMut},
 };
@@ -14,6 +14,7 @@ use crate::{
     tile::{IdMap, TileId},
     Area, Grid,
 };
+use rand::prelude::*;
 // TODO: rename all "tile" to "pattern" and "cell" to "tile"
 
 /// A Cell corresponds to a pattern in the output image
@@ -27,15 +28,17 @@ pub struct Cell {
     pub domain: EnablerDict,
     pub probability_dict: ProbabilityDict,
     pub loc: UVec2,
+    pub random_entropy: f32,
 }
 
 impl Cell {
-    fn new(probability_dict: ProbabilityDict, enabler_dict: EnablerDict, loc: UVec2) -> Self {
+    fn new(probability_dict: ProbabilityDict, enabler_dict: EnablerDict, loc: UVec2, random_entropy: f32) -> Self {
         return Self {
             collapsed_to: None,
             domain: enabler_dict,
             probability_dict,
             loc,
+            random_entropy
         };
     }
 
@@ -47,7 +50,6 @@ impl Cell {
         if self.collapsed() {
             unreachable!("Cell has already been collapsed");
         }
-        use rand::seq::IteratorRandom;
         let mut rng = rand::thread_rng();
         return self
             .domain
@@ -125,7 +127,7 @@ impl Cell {
 
     fn get_entropy_entry(&self) -> EntropyEntry {
         return EntropyEntry {
-            entropy: self.probability_dict.entropy(),
+            entropy: self.probability_dict.entropy() + self.random_entropy,
             loc: self.loc,
         };
     }
@@ -155,13 +157,15 @@ impl Model {
         let mut entropy_heap = MinEntropyHeap::new();
         let enabler_dict = EnablerDict::new(&adjacency_rules);
 
-        let mut vals = Vec::with_capacity(num_cells as usize);
-        for loc in grid.iter_locs() {
-            let cell = Cell::new(probability_dict.clone(), enabler_dict.clone(), loc);
+        let mut cells = Vec::with_capacity(num_cells as usize);
+
+        for (i, loc) in grid.iter_locs().enumerate() {
+            let random_entropy = rand::thread_rng().gen();
+            let cell = Cell::new(probability_dict.clone(), enabler_dict.clone(), loc, random_entropy);
             entropy_heap.push(cell.get_entropy_entry());
-            vals.push(cell);
+            cells.push(cell);
         }
-        let board = Board { grid, vals };
+        let board = Board { grid, vals: cells };
         let updated_cells = Vec::with_capacity(num_cells as usize);
         return Self {
             adjacency_rules,
