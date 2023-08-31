@@ -1,18 +1,10 @@
-use std::iter::zip;
-use std::rc::Rc;
-
 use glam::UVec2;
-use image::Rgba;
 use pixels::Pixels;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use wfc_lib::preprocessor::PreProcessor;
-use wfc_lib::tile::TileId;
 use wfc_lib::{preprocessor::Pattern, wfc::Model};
 use winit::platform::web::WindowBuilderExtWebSys;
 use winit::window::Window;
-
-const TILE_SIZE_DEFAULT: usize = 2;
 
 fn main() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -220,31 +212,65 @@ fn update_frame_buffer(pixels: &mut Pixels, data: &WfcData, mut updated_cells: V
     }
 }
 
-#[derive(serde::Deserialize)]
-#[serde(remote = "UVec2")]
-pub struct PlayerSettingsOutputDimensions {
-    x: u32,
-    y: u32,
-}
+pub mod Settings {
+    use super::wasm_bindgen;
+    use glam::UVec2;
+    use serde::Deserialize;
+    use wfc_lib::preprocessor::{AdjacencyMethod, PatternMethod};
 
-#[derive(serde::Deserialize)]
-pub struct PlayerSettings {
-    tile_size: u32,
-    #[serde(with = "PlayerSettingsOutputDimensions")]
-    output_dimensions: UVec2,
-    wang: bool,
-    image: String,
-    // TODO: wrap
-    // TODO: wang_flip
-    // TODO: reflect
-    // TODO: rotate
+    #[wasm_bindgen(typescript_custom_section)]
+    const SETTINGS_TS: &'static str = r#"
+interface PlayerSettings {
+    tile_size: number;
+    output_dimensions: {x: number, y: number};
+    pattern_method: "overlapping" | "tiled";
+    adjacency_method: "adjacency" | "edge";
 }
+    "#;
 
-#[derive(Default)]
+    #[wasm_bindgen]
+    extern "C" {
+        #[wasm_bindgen(typescript_type = "PlayerSettings")]
+        pub type TSPlayerSettings;
+    }
+
+    #[derive(Deserialize)]
+    #[serde(remote = "UVec2")]
+    pub struct PlayerSettingsOutputDimensions {
+        x: u32,
+        y: u32,
+    }
+
+    #[derive(Deserialize)]
+    pub struct PlayerSettings {
+        pub tile_size: u32,
+        #[serde(with = "PlayerSettingsOutputDimensions")]
+        pub output_dimensions: UVec2,
+        pub pattern_method: PatternMethod,
+        pub adjacency_method: AdjacencyMethod,
+    }
+
+    impl PlayerSettings {
+        pub fn extract_preprocessor_settings(&self) -> wfc_lib::preprocessor::Config {
+            let PlayerSettings {
+                tile_size,
+                pattern_method,
+                adjacency_method,
+                ..
+            } = *self;
+            return wfc_lib::preprocessor::Config {
+                pattern_method,
+                adjacency_method,
+                tile_size,
+            };
+        }
+    }
+}
 #[wasm_bindgen]
+// TODO: remove this struct entirely
 pub struct WfcWebBuilder {
     image: Option<image::RgbaImage>,
-    processor_config: Option<wfc_lib::preprocessor::ProcessorConfig>,
+    processor_config: Option<wfc_lib::preprocessor::Config>,
     wfc_data: Option<wfc_lib::preprocessor::WfcData>,
     output_dims: Option<UVec2>,
     // TODO: remove importance of order: option 1: everything including (pixel scale and tile_size) are options, set with defaults when ran
@@ -268,14 +294,16 @@ impl WfcWebBuilder {
         return image;
     }
 
-
-    pub fn build_from_json_settings(image_bytes: &[u8], settings: JsValue) -> WfcData {
+    pub fn build_from_json_settings(
+        image_bytes: &[u8],
+        settings: Settings::TSPlayerSettings,
+    ) -> WfcData {
         let image = Self::load_image_from_bytes(image_bytes);
-        let settings: PlayerSettings = serde_wasm_bindgen::from_value(settings).unwrap();
+        let settings: Settings::PlayerSettings =
+            serde_wasm_bindgen::from_value(settings.into()).unwrap();
+        let pp_settings = settings.extract_preprocessor_settings();
 
-        let mut processor =
-            wfc_lib::preprocessor::WangPreprocessor::new(settings.tile_size as usize);
-        let pp_data = processor.process(image);
+        let pp_data = wfc_lib::preprocessor::preprocess(image, pp_settings);
         let model = Model::new(
             pp_data.adjacency_rules,
             pp_data.tile_frequencies,
@@ -290,6 +318,7 @@ impl WfcWebBuilder {
     }
 }
 
+// TODO: sub-enum for preprocessor events when displaying preprocessing is a thing
 enum WfcEvent {
     SetPlaying(bool),
     LoadWfc(WfcData),
@@ -321,7 +350,9 @@ impl WfcController {
     pub fn set_playing(&self, playing: bool) {
         // Ignore result.
         // throws if event loop is not running, in which case do nothing
-        let _ = self.event_loop_proxy.send_event(WfcEvent::SetPlaying(playing));
+        let _ = self
+            .event_loop_proxy
+            .send_event(WfcEvent::SetPlaying(playing));
     }
 
     pub fn load_wfc(&self, data: WfcData) {

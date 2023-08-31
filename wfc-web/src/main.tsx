@@ -24,30 +24,30 @@ declare global {
     }
 }
 
+type PresetImage = "dual" | "celtic" | "corners";
 const DEFAULT_PRESET: PresetImage = "dual";
 
-const PRESET_SETTINGS: Record<string, PlayerSettings> = {
+const PRESET_SETTINGS: {[Key in PresetImage]: PlayerSettings} = {
     dual: {
+        adjacency_method: "edge",
+        pattern_method: "tiled",
         tile_size: 32,
         output_dimensions: { x: 256, y: 256 },
-        wang: true,
-        image: "dual",
     },
     celtic: {
         tile_size: 32,
         output_dimensions: { x: 256, y: 256 },
-        wang: true,
-        image: "celtic",
+        adjacency_method: "edge",
+        pattern_method: "tiled",
     },
     corners: {
         tile_size: 3,
         output_dimensions: { x: 60, y: 60 },
-        wang: false,
-        image: "corners",
+        adjacency_method: "adjacency",
+        pattern_method: "tiled",
     },
 };
 
-type PresetImage = keyof typeof PRESET_SETTINGS;
 
 const PlayPauseButton: FC = () => {
     const [ctx, { setPlaying }] = usePlayerContext();
@@ -116,9 +116,7 @@ function PlayControls() {
 
 async function loadPresetImage(preset_name: PresetImage): Promise<Uint8Array> {
     const preset = PRESET_SETTINGS[preset_name];
-    const path = `./assets/${preset.wang ? "wang" : "non-wang"}/${
-        preset.image
-    }.png`;
+    const path = `./assets/presets/${preset_name}.png`;
     const bytes: Uint8Array = await fetch(path)
         .then((response) => response.blob())
         .then((blob) => {
@@ -213,7 +211,7 @@ const PlayerSettingsMenu: FC = () => {
     let [settings, setSettings] = createStore(ctx.settings);
 
     const applyChanges = async () => {
-        let bytes = await loadPresetImage(settings.image);
+        let bytes = await loadPresetImage(ctx.preset);
         loadWfc(bytes, settings);
     };
 
@@ -302,6 +300,7 @@ interface PlayerContextState {
     wfc: WfcInterface;
     playing: boolean;
     settings: PlayerSettings;
+    preset: PresetImage;
     image: Uint8Array;
 }
 
@@ -332,6 +331,7 @@ async function init() {
     const [state, setState] = createStore<PlayerContextState>({
         wfc: { loading: true },
         settings: PRESET_SETTINGS[DEFAULT_PRESET],
+        preset: DEFAULT_PRESET,
         image: default_image,
         playing: false,
     });
@@ -340,8 +340,8 @@ async function init() {
         {
             async reload(this) {
                 if (state.wfc.loading) return;
-                console.log("loading:", state.settings.image);
-                const bytes = await loadPresetImage(state.settings.image);
+                console.log("loading:", state.preset);
+                const bytes = await loadPresetImage(state.preset);
                 context[1].loadWfc(bytes, state.settings);
             },
             loadWfc(bytes: Uint8Array, settings: PlayerSettings) {
