@@ -24,30 +24,41 @@ declare global {
     }
 }
 
-type PresetImage = "dual" | "celtic" | "corners";
+const WANG_PRESETS = [
+    "brench",
+    "bridge",
+    "celtic",
+    "corners",
+    "dual",
+    "greek",
+    "ledge",
+    "urban",
+] as const;
+
+const PRESETS = ["corners", ...WANG_PRESETS] as const;
+
+type PresetImage = (typeof PRESETS)[number];
+
 const DEFAULT_PRESET: PresetImage = "dual";
 
-const PRESET_SETTINGS: {[Key in PresetImage]: PlayerSettings} = {
-    dual: {
-        adjacency_method: "edge",
-        pattern_method: "tiled",
-        tile_size: 32,
-        output_dimensions: { x: 256, y: 256 },
-    },
-    celtic: {
-        tile_size: 32,
-        output_dimensions: { x: 256, y: 256 },
-        adjacency_method: "edge",
-        pattern_method: "tiled",
-    },
+const wang_preset_settings = {
+    adjacency_method: "edge",
+    pattern_method: "tiled",
+    tile_size: 32,
+    output_dimensions: { x: 256, y: 256 },
+} as const;
+
+const PRESET_SETTINGS: { [Key in PresetImage]: PlayerSettings } = {
+    ...(Object.fromEntries(
+        WANG_PRESETS.map((preset) => [preset, wang_preset_settings])
+    ) as { [Key in (typeof WANG_PRESETS)[number]]: PlayerSettings }),
     corners: {
         tile_size: 3,
         output_dimensions: { x: 60, y: 60 },
-        adjacency_method: "adjacency",
+        adjacency_method: "edge",
         pattern_method: "tiled",
     },
 };
-
 
 const PlayPauseButton: FC = () => {
     const [ctx, { setPlaying }] = usePlayerContext();
@@ -140,27 +151,7 @@ async function loadPresetImage(preset_name: PresetImage): Promise<Uint8Array> {
 const PresetSelector: FC<{ setPlayerSettings: (s: PlayerSettings) => void }> = (
     props
 ) => {
-    const [{ wfc }, { loadWfc }] = usePlayerContext();
-    const [preset, setPreset] = createSignal<PresetImage | null>(null);
-    createEffect(async () => {
-        let p = preset();
-        if (p) {
-            const settings = PRESET_SETTINGS[p];
-            // apply settings to player version of settings
-            props.setPlayerSettings(settings);
-
-            console.log("Selected preset:", p);
-            // TODO: put image loading in a createResource()
-            let image = await loadPresetImage(p);
-            loadWfc(image, settings);
-        }
-    });
-    // set preset once wasm is done loading
-    createEffect(() => {
-        if (!wfc.loading) {
-            setPreset(DEFAULT_PRESET);
-        }
-    });
+    const [ctx, { loadWfc, loadPreset: setPreset }] = usePlayerContext();
     // TODO: add button toggle to set whether to load preset settings
     // along with image (so that users can maintain their own settings)
     return (
@@ -170,7 +161,7 @@ const PresetSelector: FC<{ setPlayerSettings: (s: PlayerSettings) => void }> = (
                 id="presets"
                 class="border-2 text-white bg-gray-500 rounded-sm p-1"
                 onChange={(e) => setPreset(e.target!.value as PresetImage)}
-                value={preset() || undefined}
+                value={ctx.preset}
             >
                 {Object.keys(PRESET_SETTINGS).map((preset) => (
                     <option value={preset}>{preset}</option>
@@ -206,11 +197,19 @@ const PlayerSettingsSection: FC<{ children: JSX.Element; title?: string }> = (
 
 const PlayerSettingsMenu: FC = () => {
     let [ctx, { loadWfc }] = usePlayerContext();
-    // copy of settings so reset button can reset to original settings
-    // not sure if the unwrap is necessary
-    let [settings, setSettings] = createStore(ctx.settings);
+    // copy of settings so this component stores a separate version of settings
+    // not the settings in PlayerContext that are currently being used in the model
+    // this allows for reset functionality
+    let [settings, setSettings] = createStore(unwrap(ctx).settings);
+
+    // effect to update component version of settings when preset changes
+    createEffect(() => {
+        console.log("setting preset settings for:", ctx.preset)
+        setSettings(PRESET_SETTINGS[ctx.preset]);
+    }, ctx.preset);
 
     const applyChanges = async () => {
+        // TODO: check if settings have changed
         let bytes = await loadPresetImage(ctx.preset);
         loadWfc(bytes, settings);
     };
@@ -309,6 +308,7 @@ interface PlayerContextApi {
     loadWfc: (arg0: Uint8Array, arg1: PlayerSettings) => void;
     setPlaying: (arg0: boolean) => void;
     setState: SetStoreFunction<PlayerContextState>;
+    loadPreset: (arg0: PresetImage) => Promise<void>;
 }
 
 type PlayerContextTuple = [PlayerContextState, PlayerContextApi];
@@ -335,6 +335,54 @@ async function init() {
         image: default_image,
         playing: false,
     });
+
+    function loadWfc(bytes: Uint8Array, settings: PlayerSettings) {
+        setState(
+            produce((s) => {
+                s.settings = settings;
+                s.image = bytes;
+            })
+        );
+        let wasm_ = wasm();
+        if (wasm_.loading) {
+            return;
+        }
+        let wfcData = wasm_.wfc.WfcWebBuilder.build_from_json_settings(
+            bytes,
+            settings
+        );
+        if (state.wfc.loading) {
+            return;
+        }
+        state.wfc.controller.load_wfc(wfcData);
+        setPlaying(false);
+        state.wfc.controller.set_done_callback(() => {
+            setState("playing", false);
+        });
+    }
+
+    function setPlaying(playing: boolean) {
+        console.log("setPlaying", playing);
+        if (!state.wfc.loading) state.wfc.controller.set_playing(playing);
+        setState("playing", playing);
+    }
+
+    async function loadPreset(p: PresetImage) {
+        const settings = PRESET_SETTINGS[p];
+        // apply settings to player version of settings
+        setState("preset", p);
+
+        console.log("Selected preset:", p);
+        // TODO: put image loading in a createResource()
+        let image = await loadPresetImage(p);
+        loadWfc(image, settings);
+    }
+    // set preset once wasm is done loading
+    createEffect(() => {
+        if (!state.wfc.loading) {
+            loadPreset(state.preset);
+        }
+    });
     const context: PlayerContextTuple = [
         state,
         {
@@ -342,38 +390,11 @@ async function init() {
                 if (state.wfc.loading) return;
                 console.log("loading:", state.preset);
                 const bytes = await loadPresetImage(state.preset);
-                context[1].loadWfc(bytes, state.settings);
+                loadWfc(bytes, state.settings);
             },
-            loadWfc(bytes: Uint8Array, settings: PlayerSettings) {
-                setState(
-                    produce((s) => {
-                        s.settings = settings;
-                        s.image = bytes;
-                    })
-                );
-                let wasm_ = wasm();
-                if (wasm_.loading) {
-                    return;
-                }
-                let wfcData = wasm_.wfc.WfcWebBuilder.build_from_json_settings(
-                    bytes,
-                    settings
-                );
-                if (state.wfc.loading) {
-                    return;
-                }
-                state.wfc.controller.load_wfc(wfcData);
-                context[1].setPlaying(false);
-                state.wfc.controller.set_done_callback(() => {
-                    setState("playing", false);
-                });
-            },
-            setPlaying(playing: boolean) {
-                console.log("setPlaying", playing);
-                if (!state.wfc.loading)
-                    state.wfc.controller.set_playing(playing);
-                setState("playing", playing);
-            },
+            loadWfc,
+            setPlaying,
+            loadPreset,
             setState,
         },
     ];
