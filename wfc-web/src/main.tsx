@@ -8,6 +8,7 @@ import {
     createContext,
     JSX,
     useContext,
+    createRenderEffect,
 } from "solid-js";
 import { SetStoreFunction, createStore, produce, unwrap } from "solid-js/store";
 import type {
@@ -349,45 +350,13 @@ const usePlayerContext = () => {
 };
 
 function App() {
-    return (
-        <>
-            <div id="title" class="flex flex-row justify-center p-2 mt-4">
-                <h1 class="lg:text-4xl text-6xl text-white">
-                    <ul>Wave Function Collapse!</ul>
-                </h1>
-            </div>
-            <div
-                id="page1"
-                class="w-screen h-screen flex flex-col justify-center"
-            >
-                <div
-                    id="player+menu"
-                    class="flex flex-col w-full h-full justify-around lg:justify-center lg:flex-row py-4 px-8 m-4"
-                >
-                    <div id="player">
-                        <div id="canvas-container" class="flex justify-center">
-                            <canvas class="object-contain" id="wfc"></canvas>
-                        </div>
-                    </div>
-                    <div class="mx-4">
-                        <PlayerSettingsMenu />
-                        <PlayControls />
-                    </div>
-                </div>
-            </div>
-        </>
-    );
-}
-
-async function init() {
     type WasmInterface = { loading: true } | { loading: false; wfc: Wfc };
     const [wasm, setWasm] = createSignal<WasmInterface>({ loading: true });
-    let default_image = await loadPresetImage(DEFAULT_PRESET);
     const [state, setState] = createStore<PlayerContextState>({
         wfc: { loading: true },
         settings: PRESET_SETTINGS[DEFAULT_PRESET],
         preset: DEFAULT_PRESET,
-        image: default_image,
+        image: new Uint8Array(),
         playing: false,
     });
 
@@ -451,15 +420,6 @@ async function init() {
         },
     ];
 
-    render(
-        () => (
-            <PlayerContext.Provider value={context}>
-                <App />
-            </PlayerContext.Provider>
-        ),
-        document.body,
-    );
-
     window.addEventListener("resize", (_e) => {
         if (state.wfc.loading) return;
         let controller = state.wfc.controller;
@@ -494,32 +454,73 @@ async function init() {
 
     // separated for type checking
     // TODO: handle error case with reject()
-    const wfcPromise: Promise<Wfc> = new Promise((resolve) => {
-        // Wait for wasm module to load
-        const intervalId = setInterval(() => {
-            console.log("waiting for wasm init");
-            if (window.wasm !== undefined) {
-                clearInterval(intervalId);
-                resolve(window.wasm as Wfc);
-            }
-        }, 100);
-    });
+    let canvasRef: HTMLCanvasElement | undefined;
     // TODO: put this in a createResource()
-    wfcPromise
-        .then(async (wasm_) => {
-            console.log("wasm loaded");
-            const display = await wasm_.WfcWindow.new();
-            const controller = wasm_.WfcController.init(display);
-            console.log("attaching window");
-            setWasm({ loading: false, wfc: wasm_ });
-            setState("wfc", { loading: false, controller });
-            return display;
-        })
-        .then((display) => {
+    createEffect(async () => {
+        let wasm: Wfc = await new Promise((resolve) => {
+            // Wait for wasm module to load
+            const intervalId = setInterval(() => {
+                console.log("waiting for wasm init");
+                if (window.wasm !== undefined) {
+                    clearInterval(intervalId);
+                    resolve(window.wasm as Wfc);
+                }
+            }, 100);
+        });
+        setWasm({ loading: false, wfc: wasm });
+    });
+
+    createEffect(async () => {
+        let wasm_ = wasm();
+        if (wasm_.loading) return;
+        let wfc = wasm_.wfc;
+        console.log("wasm loaded");
+        if (!canvasRef) {
+            console.error("canvasRef not set!");
+            return;
+        }
+
+        const display = await wfc.WfcWindow.new(canvasRef);
+        const controller = wfc.WfcController.init(display);
+        console.log("attaching window");
+        setState("wfc", { loading: false, controller });
+
             console.log("starting event loop");
             // NOTE: this is blocking! nothing after this will run!
             display.start_event_loop();
-        });
+    });
+    return (
+        <PlayerContext.Provider value={context}>
+            <div id="title" class="flex flex-row justify-center p-2 mt-4">
+                <h1 class="lg:text-4xl text-6xl text-white">
+                    <ul>Wave Function Collapse!</ul>
+                </h1>
+            </div>
+            <div
+                id="page1"
+                class="w-screen h-screen flex flex-col justify-center"
+            >
+                <div
+                    id="player+menu"
+                    class="flex flex-col w-full h-full justify-around lg:justify-center lg:flex-row py-4 px-8 m-4"
+                >
+                    <div id="player">
+                        <div id="canvas-container" class="flex justify-center">
+                            <canvas
+                                ref={canvasRef}
+                                class="object-contain"
+                                id="wfc"
+                            ></canvas>
+                        </div>
+                    </div>
+                    <div class="mx-4">
+                        <PlayerSettingsMenu />
+                        <PlayControls />
+                    </div>
+                </div>
+            </div>
+        </PlayerContext.Provider>
+    );
 }
 
-init();
+render(() => <App />, document.getElementById("app")!);
