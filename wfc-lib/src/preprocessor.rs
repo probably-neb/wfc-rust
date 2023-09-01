@@ -410,7 +410,7 @@ fn get_edges(sub_img: &PatternSubImage, tile_size: u32) -> [Edge; 4] {
             Right => sub_img.view(tile_size - 1, 0, 1, tile_size),
             Down => sub_img.view(0, tile_size - 1, tile_size, 1),
         };
-        let edge: Vec<Rgba<u8>> = sub_sub_img.pixels().map(|(_, _, rgba)| rgba).collect();
+        let mut edge: Vec<Rgba<u8>> = sub_sub_img.pixels().map(|(_, _, rgba)| rgba).collect();
         return edge;
     });
 }
