@@ -368,7 +368,7 @@ async function init() {
         if (wasm_.loading) {
             return;
         }
-        let wfcData = wasm_.wfc.WfcWebBuilder.build_from_json_settings(
+        let wfcData = wasm_.wfc.build_from_json_settings(
             bytes,
             settings,
         );

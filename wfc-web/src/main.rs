@@ -218,7 +218,6 @@ pub mod Settings {
     use serde::Deserialize;
     use wfc_lib::preprocessor::{AdjacencyMethod, PatternMethod};
 
-
     #[derive(Deserialize, tsify::Tsify)]
     /// Clone of UVec2 for deserializing
     pub struct PlayerSettingsOutputDimensions {
@@ -256,58 +255,43 @@ pub mod Settings {
         }
     }
 }
-#[wasm_bindgen]
-// TODO: remove this struct entirely
-pub struct WfcWebBuilder {
-    image: Option<image::RgbaImage>,
-    processor_config: Option<wfc_lib::preprocessor::Config>,
-    wfc_data: Option<wfc_lib::preprocessor::WfcData>,
-    output_dims: Option<UVec2>,
-    // TODO: remove importance of order: option 1: everything including (pixel scale and tile_size) are options, set with defaults when ran
-    tile_size: usize,
+
+fn load_image_from_bytes(raw_data: &[u8]) -> image::RgbaImage {
+    // TODO: consider whether decoding here is really necessary
+    //
+    // Assuming it is so that Image figures out how to give me the vec of
+    // pixels I want
+    let reader = image::io::Reader::new(std::io::Cursor::new(raw_data))
+        .with_guessed_format()
+        .expect("Cursor io never fails");
+    let image = reader.decode().unwrap().to_rgba8();
+    return image;
 }
 
-// TODO: proc macro / derive macro to generate these builder functions and
-// set mutually exclusive fields
-// also maybe assert functions?
 #[wasm_bindgen]
-impl WfcWebBuilder {
-    fn load_image_from_bytes(raw_data: &[u8]) -> image::RgbaImage {
-        // TODO: consider whether decoding here is really necessary
-        //
-        // Assuming it is so that Image figures out how to give me the vec of
-        // pixels I want
-        let reader = image::io::Reader::new(std::io::Cursor::new(raw_data))
-            .with_guessed_format()
-            .expect("Cursor io never fails");
-        let image = reader.decode().unwrap().to_rgba8();
-        return image;
-    }
+pub fn build_from_json_settings(
+    image_bytes: &[u8],
+    // TODO: add js feature to tsify to allow for deserializing directly with wasmabi derives
+    settings: JsValue,
+) -> WfcData {
+    let image = load_image_from_bytes(image_bytes);
+    let settings: Settings::PlayerSettings =
+        serde_wasm_bindgen::from_value(settings.into()).unwrap();
+    let pp_settings = settings.extract_preprocessor_settings();
+    let output_dimensions = settings.output_dimensions.into();
 
-    pub fn build_from_json_settings(
-        image_bytes: &[u8],
-        // TODO: add js feature to tsify to allow for deserializing directly with wasmabi derives
-        settings: JsValue,
-    ) -> WfcData {
-        let image = Self::load_image_from_bytes(image_bytes);
-        let settings: Settings::PlayerSettings =
-            serde_wasm_bindgen::from_value(settings.into()).unwrap();
-        let pp_settings = settings.extract_preprocessor_settings();
-        let output_dimensions = settings.output_dimensions.into();
-
-        let pp_data = wfc_lib::preprocessor::preprocess(image, pp_settings);
-        let model = Model::new(
-            pp_data.adjacency_rules,
-            pp_data.tile_frequencies,
-            output_dimensions / settings.tile_size,
-        );
-        return WfcData {
-            model,
-            patterns: pp_data.patterns,
-            tile_size: settings.tile_size as usize,
-            output_dimensions,
-        };
-    }
+    let pp_data = wfc_lib::preprocessor::preprocess(image, pp_settings);
+    let model = Model::new(
+        pp_data.adjacency_rules,
+        pp_data.tile_frequencies,
+        output_dimensions / settings.tile_size,
+    );
+    return WfcData {
+        model,
+        patterns: pp_data.patterns,
+        tile_size: settings.tile_size as usize,
+        output_dimensions,
+    };
 }
 
 // TODO: sub-enum for preprocessor events when displaying preprocessing is a thing
