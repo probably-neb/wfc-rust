@@ -1,5 +1,11 @@
 /* tslint:disable */
 /* eslint-disable */
+/**
+* @param {Uint8Array} image_bytes
+* @param {any} settings
+* @returns {WfcData}
+*/
+export function build_from_json_settings(image_bytes: Uint8Array, settings: any): WfcData;
 export interface PlayerSettingsOutputDimensions {
     x: number;
     y: number;
@@ -65,17 +71,6 @@ export class WfcData {
 }
 /**
 */
-export class WfcWebBuilder {
-  free(): void;
-/**
-* @param {Uint8Array} image_bytes
-* @param {any} settings
-* @returns {WfcData}
-*/
-  static build_from_json_settings(image_bytes: Uint8Array, settings: any): WfcData;
-}
-/**
-*/
 export class WfcWindow {
   free(): void;
 /**
@@ -95,8 +90,7 @@ export interface InitOutput {
   readonly __wbg_wfcwindow_free: (a: number) => void;
   readonly wfcwindow_new: () => number;
   readonly wfcwindow_start_event_loop: (a: number) => void;
-  readonly __wbg_wfcwebbuilder_free: (a: number) => void;
-  readonly wfcwebbuilder_build_from_json_settings: (a: number, b: number, c: number) => number;
+  readonly build_from_json_settings: (a: number, b: number, c: number) => number;
   readonly __wbg_wfccontroller_free: (a: number) => void;
   readonly wfccontroller_init: (a: number) => number;
   readonly wfccontroller_set_playing: (a: number, b: number) => void;
