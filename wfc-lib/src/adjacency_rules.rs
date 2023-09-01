@@ -248,6 +248,19 @@ impl From<CardinalDirs> for usize {
     }
 }
 
+impl From<usize> for CardinalDirs {
+    fn from(value: usize) -> Self {
+        match value {
+            0 => CardinalDirs::Up,
+            1 => CardinalDirs::Left,
+            2 => CardinalDirs::Down,
+            3 => CardinalDirs::Right,
+            _ => panic!("Invalid usize for CardinalDirs"),
+        }
+    }
+}
+
+
 impl From<CardinalDirs> for IVec2 {
     fn from(value: CardinalDirs) -> Self {
         match value {

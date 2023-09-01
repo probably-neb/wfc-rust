@@ -8,3 +8,6 @@ deploy-prev:
 deploy-prod:
 	vercel build --prod
 	vercel deploy --prebuilt --prod
+
+build:
+    cargo build --target wasm32-unknown-unknown

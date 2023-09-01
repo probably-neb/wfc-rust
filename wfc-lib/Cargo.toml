@@ -20,4 +20,10 @@ derive_more = {version = "0.99.17", default-features=false, features = [
              "from",
              "is_variant",
 ]}
-serde = { version = "1.0.188", features = ["derive"] }
+serde = { version = "1.0.188", features = ["derive"], optional = true}
+tsify = {version = "0.4.5", optional = true}
+wasm-bindgen = { version = "0.2.87", optional = true }
+
+[features]
+web = ["dep:serde", "dep:tsify", "dep:wasm-bindgen"]
+

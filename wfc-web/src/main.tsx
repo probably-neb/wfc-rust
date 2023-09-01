@@ -10,7 +10,12 @@ import {
     useContext,
 } from "solid-js";
 import { SetStoreFunction, createStore, produce, unwrap } from "solid-js/store";
-import type { WfcController, WfcData, PlayerSettings } from "./wfc-web.d.ts";
+import type {
+    WfcController,
+    WfcData,
+    PlayerSettings,
+    EdgeMethod,
+} from "./wfc-web.d.ts";
 
 import type * as WfcNamespace from "./wfc-web.d.ts";
 type Wfc = typeof WfcNamespace;
@@ -28,36 +33,52 @@ const WANG_PRESETS = [
     "brench",
     "bridge",
     "celtic",
-    "corners",
     "dual",
     "greek",
     "ledge",
     "urban",
 ] as const;
 
-const PRESETS = ["corners", ...WANG_PRESETS] as const;
+type PresetMap<V> = {[Key in Preset]: V};
+type WangPresetMap<V> = {[Key in WangPreset]: V};
 
-type PresetImage = (typeof PRESETS)[number];
-
-const DEFAULT_PRESET: PresetImage = "dual";
-
-const wang_preset_settings = {
-    adjacency_method: "edge",
-    pattern_method: "tiled",
-    tile_size: 32,
-    output_dimensions: { x: 256, y: 256 },
+const WANG_PRESET_EDGE_TYPE: WangPresetMap<EdgeMethod> = {
+    brench: "perfect",
+    bridge: "perfect",
+    celtic: "flip",
+    dual: "perfect",
+    greek: "perfect",
+    ledge: "adjacent",
+    urban: "adjacent",
 } as const;
 
-const PRESET_SETTINGS: { [Key in PresetImage]: PlayerSettings } = {
+// TODO: add non wang presets
+const PRESETS = ["corners",...WANG_PRESETS] as const;
+
+type Preset = (typeof PRESETS)[number];
+type WangPreset = (typeof WANG_PRESETS)[number];
+
+const DEFAULT_PRESET: Preset = "dual";
+
+function wang_preset_settings(em: EdgeMethod) {
+    return {
+        adjacency_method: {edge: em},
+        pattern_method: "tiled",
+        tile_size: 32,
+        output_dimensions: { x: 256, y: 256 },
+    };
+}
+
+const PRESET_SETTINGS: PresetMap<PlayerSettings> = {
     ...(Object.fromEntries(
-        WANG_PRESETS.map((preset) => [preset, wang_preset_settings])
-    ) as { [Key in (typeof WANG_PRESETS)[number]]: PlayerSettings }),
+        WANG_PRESETS.map((preset) => [preset, wang_preset_settings(WANG_PRESET_EDGE_TYPE[preset])]),
+    ) as WangPresetMap<PlayerSettings>),
     corners: {
+        adjacency_method: { edge: "perfect" },
+        pattern_method: "tiled",
         tile_size: 3,
         output_dimensions: { x: 60, y: 60 },
-        adjacency_method: "edge",
-        pattern_method: "tiled",
-    },
+    }
 };
 
 const PlayPauseButton: FC = () => {
@@ -125,7 +146,7 @@ function PlayControls() {
     );
 }
 
-async function loadPresetImage(preset_name: PresetImage): Promise<Uint8Array> {
+async function loadPresetImage(preset_name: Preset): Promise<Uint8Array> {
     const preset = PRESET_SETTINGS[preset_name];
     const path = `./assets/presets/${preset_name}.png`;
     const bytes: Uint8Array = await fetch(path)
@@ -136,7 +157,7 @@ async function loadPresetImage(preset_name: PresetImage): Promise<Uint8Array> {
             return new Promise((resolve, reject) => {
                 reader.onloadend = function () {
                     const u8Array = new Uint8Array(
-                        reader.result as ArrayBufferLike
+                        reader.result as ArrayBufferLike,
                     );
                     resolve(u8Array);
                 };
@@ -149,7 +170,7 @@ async function loadPresetImage(preset_name: PresetImage): Promise<Uint8Array> {
 }
 
 const PresetSelector: FC<{ setPlayerSettings: (s: PlayerSettings) => void }> = (
-    props
+    props,
 ) => {
     const [ctx, { loadWfc, loadPreset: setPreset }] = usePlayerContext();
     // TODO: add button toggle to set whether to load preset settings
@@ -160,7 +181,7 @@ const PresetSelector: FC<{ setPlayerSettings: (s: PlayerSettings) => void }> = (
             <select
                 id="presets"
                 class="border-2 text-white bg-gray-500 rounded-sm p-1"
-                onChange={(e) => setPreset(e.target!.value as PresetImage)}
+                onChange={(e) => setPreset(e.target!.value as Preset)}
                 value={ctx.preset}
             >
                 {Object.keys(PRESET_SETTINGS).map((preset) => (
@@ -181,7 +202,7 @@ const Divider: FC = () => {
 };
 
 const PlayerSettingsSection: FC<{ children: JSX.Element; title?: string }> = (
-    props
+    props,
 ) => {
     return (
         <div class="flex flex-col text-2xl lg:text-base">
@@ -204,7 +225,7 @@ const PlayerSettingsMenu: FC = () => {
 
     // effect to update component version of settings when preset changes
     createEffect(() => {
-        console.log("setting preset settings for:", ctx.preset)
+        console.log("setting preset settings for:", ctx.preset);
         setSettings(PRESET_SETTINGS[ctx.preset]);
     }, ctx.preset);
 
@@ -250,7 +271,7 @@ const PlayerSettingsMenu: FC = () => {
                             setSettings(
                                 "output_dimensions",
                                 "x",
-                                e.target.valueAsNumber
+                                e.target.valueAsNumber,
                             )
                         }
                     ></input>
@@ -263,7 +284,7 @@ const PlayerSettingsMenu: FC = () => {
                             setSettings(
                                 "output_dimensions",
                                 "y",
-                                e.target.valueAsNumber
+                                e.target.valueAsNumber,
                             )
                         }
                     ></input>
@@ -299,7 +320,7 @@ interface PlayerContextState {
     wfc: WfcInterface;
     playing: boolean;
     settings: PlayerSettings;
-    preset: PresetImage;
+    preset: Preset;
     image: Uint8Array;
 }
 
@@ -308,7 +329,7 @@ interface PlayerContextApi {
     loadWfc: (arg0: Uint8Array, arg1: PlayerSettings) => void;
     setPlaying: (arg0: boolean) => void;
     setState: SetStoreFunction<PlayerContextState>;
-    loadPreset: (arg0: PresetImage) => Promise<void>;
+    loadPreset: (arg0: Preset) => Promise<void>;
 }
 
 type PlayerContextTuple = [PlayerContextState, PlayerContextApi];
@@ -319,7 +340,7 @@ const usePlayerContext = () => {
     const ctx = useContext(PlayerContext);
     if (!ctx)
         throw new Error(
-            "usePlayerContext must be used within a PlayerContextProvider"
+            "usePlayerContext must be used within a PlayerContextProvider",
         );
     return ctx;
 };
@@ -341,7 +362,7 @@ async function init() {
             produce((s) => {
                 s.settings = settings;
                 s.image = bytes;
-            })
+            }),
         );
         let wasm_ = wasm();
         if (wasm_.loading) {
@@ -349,7 +370,7 @@ async function init() {
         }
         let wfcData = wasm_.wfc.WfcWebBuilder.build_from_json_settings(
             bytes,
-            settings
+            settings,
         );
         if (state.wfc.loading) {
             return;
@@ -367,7 +388,7 @@ async function init() {
         setState("playing", playing);
     }
 
-    async function loadPreset(p: PresetImage) {
+    async function loadPreset(p: Preset) {
         const settings = PRESET_SETTINGS[p];
         // apply settings to player version of settings
         setState("preset", p);
@@ -405,7 +426,7 @@ async function init() {
                 <PlayerMenu />
             </PlayerContext.Provider>
         ),
-        document.getElementById("player-menu")!
+        document.getElementById("player-menu")!,
     );
 
     window.addEventListener("resize", (_e) => {

@@ -8,7 +8,7 @@ use winit::window::Window;
 
 fn main() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-    console_log::init_with_level(log::Level::Warn).expect("error initializing logger");
+    console_log::init_with_level(log::Level::Info).expect("error initializing logger");
     // TODO: specifying seed for random weighting of tiles
     // TODO: render preprocessor steps
 }
@@ -218,34 +218,24 @@ pub mod Settings {
     use serde::Deserialize;
     use wfc_lib::preprocessor::{AdjacencyMethod, PatternMethod};
 
-    #[wasm_bindgen(typescript_custom_section)]
-    const SETTINGS_TS: &'static str = r#"
-interface PlayerSettings {
-    tile_size: number;
-    output_dimensions: {x: number, y: number};
-    pattern_method: "overlapping" | "tiled";
-    adjacency_method: "adjacency" | "edge";
-}
-    "#;
 
-    #[wasm_bindgen]
-    extern "C" {
-        #[wasm_bindgen(typescript_type = "PlayerSettings")]
-        pub type TSPlayerSettings;
-    }
-
-    #[derive(Deserialize)]
-    #[serde(remote = "UVec2")]
+    #[derive(Deserialize, tsify::Tsify)]
+    /// Clone of UVec2 for deserializing
     pub struct PlayerSettingsOutputDimensions {
         x: u32,
         y: u32,
     }
 
-    #[derive(Deserialize)]
+    impl Into<UVec2> for PlayerSettingsOutputDimensions {
+        fn into(self) -> UVec2 {
+            return UVec2::new(self.x, self.y);
+        }
+    }
+
+    #[derive(Deserialize, tsify::Tsify)]
     pub struct PlayerSettings {
         pub tile_size: u32,
-        #[serde(with = "PlayerSettingsOutputDimensions")]
-        pub output_dimensions: UVec2,
+        pub output_dimensions: PlayerSettingsOutputDimensions,
         pub pattern_method: PatternMethod,
         pub adjacency_method: AdjacencyMethod,
     }
@@ -296,24 +286,26 @@ impl WfcWebBuilder {
 
     pub fn build_from_json_settings(
         image_bytes: &[u8],
-        settings: Settings::TSPlayerSettings,
+        // TODO: add js feature to tsify to allow for deserializing directly with wasmabi derives
+        settings: JsValue,
     ) -> WfcData {
         let image = Self::load_image_from_bytes(image_bytes);
         let settings: Settings::PlayerSettings =
             serde_wasm_bindgen::from_value(settings.into()).unwrap();
         let pp_settings = settings.extract_preprocessor_settings();
+        let output_dimensions = settings.output_dimensions.into();
 
         let pp_data = wfc_lib::preprocessor::preprocess(image, pp_settings);
         let model = Model::new(
             pp_data.adjacency_rules,
             pp_data.tile_frequencies,
-            settings.output_dimensions / settings.tile_size,
+            output_dimensions / settings.tile_size,
         );
         return WfcData {
             model,
             patterns: pp_data.patterns,
             tile_size: settings.tile_size as usize,
-            output_dimensions: settings.output_dimensions,
+            output_dimensions,
         };
     }
 }
