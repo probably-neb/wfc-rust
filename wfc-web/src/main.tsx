@@ -39,8 +39,8 @@ const WANG_PRESETS = [
     "urban",
 ] as const;
 
-type PresetMap<V> = {[Key in Preset]: V};
-type WangPresetMap<V> = {[Key in WangPreset]: V};
+type PresetMap<V> = { [Key in Preset]: V };
+type WangPresetMap<V> = { [Key in WangPreset]: V };
 
 const WANG_PRESET_EDGE_TYPE: WangPresetMap<EdgeMethod> = {
     brench: "perfect",
@@ -53,7 +53,7 @@ const WANG_PRESET_EDGE_TYPE: WangPresetMap<EdgeMethod> = {
 } as const;
 
 // TODO: add non wang presets
-const PRESETS = ["corners",...WANG_PRESETS] as const;
+const PRESETS = ["corners", ...WANG_PRESETS] as const;
 
 type Preset = (typeof PRESETS)[number];
 type WangPreset = (typeof WANG_PRESETS)[number];
@@ -62,7 +62,7 @@ const DEFAULT_PRESET: Preset = "dual";
 
 function wang_preset_settings(em: EdgeMethod) {
     return {
-        adjacency_method: {edge: em},
+        adjacency_method: { edge: em },
         pattern_method: "tiled",
         tile_size: 32,
         output_dimensions: { x: 256, y: 256 },
@@ -71,14 +71,17 @@ function wang_preset_settings(em: EdgeMethod) {
 
 const PRESET_SETTINGS: PresetMap<PlayerSettings> = {
     ...(Object.fromEntries(
-        WANG_PRESETS.map((preset) => [preset, wang_preset_settings(WANG_PRESET_EDGE_TYPE[preset])]),
+        WANG_PRESETS.map((preset) => [
+            preset,
+            wang_preset_settings(WANG_PRESET_EDGE_TYPE[preset]),
+        ]),
     ) as WangPresetMap<PlayerSettings>),
     corners: {
         adjacency_method: { edge: "perfect" },
         pattern_method: "tiled",
         tile_size: 3,
         output_dimensions: { x: 60, y: 60 },
-    }
+    },
 };
 
 const PlayPauseButton: FC = () => {
@@ -345,6 +348,37 @@ const usePlayerContext = () => {
     return ctx;
 };
 
+function App() {
+    return (
+        <>
+            <div id="title" class="flex flex-row justify-center p-2 mt-4">
+                <h1 class="lg:text-4xl text-6xl text-white">
+                    <ul>Wave Function Collapse!</ul>
+                </h1>
+            </div>
+            <div
+                id="page1"
+                class="w-screen h-screen flex flex-col justify-center"
+            >
+                <div
+                    id="player+menu"
+                    class="flex flex-col w-full h-full justify-around lg:justify-center lg:flex-row py-4 px-8 m-4"
+                >
+                    <div id="player">
+                        <div id="canvas-container" class="flex justify-center">
+                            <canvas class="object-contain" id="wfc"></canvas>
+                        </div>
+                    </div>
+                    <div class="mx-4">
+                        <PlayerSettingsMenu />
+                        <PlayControls />
+                    </div>
+                </div>
+            </div>
+        </>
+    );
+}
+
 async function init() {
     type WasmInterface = { loading: true } | { loading: false; wfc: Wfc };
     const [wasm, setWasm] = createSignal<WasmInterface>({ loading: true });
@@ -368,10 +402,7 @@ async function init() {
         if (wasm_.loading) {
             return;
         }
-        let wfcData = wasm_.wfc.build_from_json_settings(
-            bytes,
-            settings,
-        );
+        let wfcData = wasm_.wfc.build_from_json_settings(bytes, settings);
         if (state.wfc.loading) {
             return;
         }
@@ -423,10 +454,10 @@ async function init() {
     render(
         () => (
             <PlayerContext.Provider value={context}>
-                <PlayerMenu />
+                <App />
             </PlayerContext.Provider>
         ),
-        document.getElementById("player-menu")!,
+        document.body,
     );
 
     window.addEventListener("resize", (_e) => {
