@@ -9,6 +9,9 @@ import {
     JSX,
     useContext,
     createRenderEffect,
+    createResource,
+    InitializedResource,
+    createReaction,
 } from "solid-js";
 import { SetStoreFunction, createStore, produce, unwrap } from "solid-js/store";
 import type {
@@ -320,6 +323,8 @@ type WfcInterface =
           controller: WfcController;
       };
 
+type WasmInterface = { loading: true } | { loading: false; wfc: Wfc };
+
 interface PlayerContextState {
     wfc: WfcInterface;
     playing: boolean;
@@ -349,9 +354,7 @@ const usePlayerContext = () => {
     return ctx;
 };
 
-function App() {
-    type WasmInterface = { loading: true } | { loading: false; wfc: Wfc };
-    const [wasm, setWasm] = createSignal<WasmInterface>({ loading: true });
+function createPlayerContext(useWasm: InitializedResource<WasmInterface>) {
     const [state, setState] = createStore<PlayerContextState>({
         wfc: { loading: true },
         settings: PRESET_SETTINGS[DEFAULT_PRESET],
@@ -367,11 +370,11 @@ function App() {
                 s.image = bytes;
             }),
         );
-        let wasm_ = wasm();
-        if (wasm_.loading) {
+        let wasm = useWasm();
+        if (wasm.loading) {
             return;
         }
-        let wfcData = wasm_.wfc.build_from_json_settings(bytes, settings);
+        let wfcData = wasm.wfc.build_from_json_settings(bytes, settings);
         if (state.wfc.loading) {
             return;
         }
@@ -398,12 +401,7 @@ function App() {
         let image = await loadPresetImage(p);
         loadWfc(image, settings);
     }
-    // set preset once wasm is done loading
-    createEffect(() => {
-        if (!state.wfc.loading) {
-            loadPreset(state.preset);
-        }
-    });
+
     const context: PlayerContextTuple = [
         state,
         {
@@ -419,6 +417,63 @@ function App() {
             setState,
         },
     ];
+    return context;
+}
+
+    async function waitForWasm() {
+        // separated for type checking
+        let wasm: Wfc = await new Promise((resolve) => {
+            // Wait for wasm module to load
+            const intervalId = setInterval(() => {
+                console.log("waiting for wasm init");
+                if (window.wasm !== undefined) {
+                    clearInterval(intervalId);
+                    resolve(window.wasm as Wfc);
+                }
+            }, 10);
+        });
+        // createResource has a .loading attibute on the returned signal however it
+        // does not provide type checking for the signal itself
+        return { wfc: wasm, loading: false };
+    }
+
+
+function App() {
+    // TODO: figure out better way to handle canvas sizing that prevents menu
+    // moving on load
+    const [useWasm] = createResource<WasmInterface>(waitForWasm, {
+        initialValue: { loading: true },
+    });
+    const ctx = createPlayerContext(useWasm);
+    let state = ctx[0];
+    let [, { loadPreset, setState }] = ctx;
+
+    let canvasRef: HTMLCanvasElement | undefined;
+
+    // whenever the wasm loading state changes do all of this
+    // NOTE: I don't know if this relies on the wasm not being loaded
+    // i.e. I don't know at which stage in the component lifecycle this runs
+    let trackWfc = createReaction(async () => {
+        let wasm = useWasm();
+        if (wasm.loading) return;
+        let wfc = wasm.wfc;
+        console.log("wasm loaded");
+        if (!canvasRef) {
+            console.error("canvasRef not set!");
+            return;
+        }
+
+        const display = await wfc.WfcWindow.new(canvasRef);
+        const controller = wfc.WfcController.init(display);
+        console.log("attaching window");
+        setState("wfc", { loading: false, controller });
+        loadPreset(state.preset);
+
+        console.log("starting event loop");
+        // NOTE: this is blocking! nothing after this will run!
+        display.start_event_loop();
+    });
+    trackWfc(() => useWasm().loading);
 
     window.addEventListener("resize", (_e) => {
         if (state.wfc.loading) return;
@@ -452,45 +507,8 @@ function App() {
         controller.resize_canvas(w, h);
     });
 
-    // separated for type checking
-    // TODO: handle error case with reject()
-    let canvasRef: HTMLCanvasElement | undefined;
-    // TODO: put this in a createResource()
-    createEffect(async () => {
-        let wasm: Wfc = await new Promise((resolve) => {
-            // Wait for wasm module to load
-            const intervalId = setInterval(() => {
-                console.log("waiting for wasm init");
-                if (window.wasm !== undefined) {
-                    clearInterval(intervalId);
-                    resolve(window.wasm as Wfc);
-                }
-            }, 100);
-        });
-        setWasm({ loading: false, wfc: wasm });
-    });
-
-    createEffect(async () => {
-        let wasm_ = wasm();
-        if (wasm_.loading) return;
-        let wfc = wasm_.wfc;
-        console.log("wasm loaded");
-        if (!canvasRef) {
-            console.error("canvasRef not set!");
-            return;
-        }
-
-        const display = await wfc.WfcWindow.new(canvasRef);
-        const controller = wfc.WfcController.init(display);
-        console.log("attaching window");
-        setState("wfc", { loading: false, controller });
-
-            console.log("starting event loop");
-            // NOTE: this is blocking! nothing after this will run!
-            display.start_event_loop();
-    });
     return (
-        <PlayerContext.Provider value={context}>
+        <PlayerContext.Provider value={ctx}>
             <div id="title" class="flex flex-row justify-center p-2 mt-4">
                 <h1 class="lg:text-4xl text-6xl text-white">
                     <ul>Wave Function Collapse!</ul>
