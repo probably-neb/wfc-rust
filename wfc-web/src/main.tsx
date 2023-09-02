@@ -251,10 +251,27 @@ const PlayerSettingsMenu: FC = () => {
                     <span class="mr-1">Tile Size:</span>
                     <input
                         type="number"
-                        class="w-10 bg-transparent border-[1px] truncate hover:whitespace-normal"
-                        value={settings.tile_size}
+                        class="w-12 bg-transparent border-[1px]"
+                        value={settings.tile_size.x}
                         onChange={(e) =>
-                            setSettings("tile_size", e.target.valueAsNumber)
+                            setSettings(
+                                "tile_size",
+                                "x",
+                                e.target.valueAsNumber,
+                            )
+                        }
+                    ></input>
+                    <span class="mx-1">x</span>
+                    <input
+                        type="number"
+                        class="w-12 bg-transparent border-[1px]"
+                        value={settings.tile_size.y}
+                        onChange={(e) =>
+                            setSettings(
+                                "tile_size",
+                                "y",
+                                e.target.valueAsNumber,
+                            )
                         }
                     ></input>
                 </div>
