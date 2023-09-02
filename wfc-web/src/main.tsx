@@ -1,23 +1,18 @@
 import { render } from "solid-js/web";
 import {
-    createSignal,
     Show,
     createEffect,
-    Accessor,
     Component as FC,
     createContext,
     JSX,
     useContext,
-    createRenderEffect,
     createResource,
     InitializedResource,
     createReaction,
-    onMount,
 } from "solid-js";
 import { SetStoreFunction, createStore, produce, unwrap } from "solid-js/store";
 import type {
     WfcController,
-    WfcData,
     PlayerSettings,
     EdgeMethod,
 } from "./wfc-web.d.ts";
@@ -69,7 +64,7 @@ function wang_preset_settings(em: EdgeMethod) {
     return {
         adjacency_method: { edge: em },
         pattern_method: "tiled",
-        tile_size: 32,
+        tile_size: {x: 32, y: 32},
         output_dimensions: { x: 256, y: 256 },
     };
 }
@@ -84,7 +79,7 @@ const PRESET_SETTINGS: PresetMap<PlayerSettings> = {
     corners: {
         adjacency_method: { edge: "perfect" },
         pattern_method: "tiled",
-        tile_size: 3,
+        tile_size: {x: 3, y: 3},
         output_dimensions: { x: 60, y: 60 },
     },
 };
@@ -155,7 +150,6 @@ function PlayControls() {
 }
 
 async function loadPresetImage(preset_name: Preset): Promise<Uint8Array> {
-    const preset = PRESET_SETTINGS[preset_name];
     const path = `./assets/presets/${preset_name}.png`;
     const bytes: Uint8Array = await fetch(path)
         .then((response) => response.blob())
@@ -177,10 +171,8 @@ async function loadPresetImage(preset_name: Preset): Promise<Uint8Array> {
     return bytes;
 }
 
-const PresetSelector: FC<{ setPlayerSettings: (s: PlayerSettings) => void }> = (
-    props,
-) => {
-    const [ctx, { loadWfc, loadPreset: setPreset }] = usePlayerContext();
+const PresetSelector: FC = () => {
+    const [ctx, { loadPreset: setPreset }] = usePlayerContext();
     // TODO: add button toggle to set whether to load preset settings
     // along with image (so that users can maintain their own settings)
     return (
@@ -251,7 +243,7 @@ const PlayerSettingsMenu: FC = () => {
             class="flex flex-row lg:flex-col justify-around rounded-md border-2 text-white p-2"
         >
             <PlayerSettingsSection>
-                <PresetSelector setPlayerSettings={setSettings} />
+                <PresetSelector />
             </PlayerSettingsSection>
             <Divider />
             <PlayerSettingsSection title="Preprocessor Settings">
@@ -302,15 +294,6 @@ const PlayerSettingsMenu: FC = () => {
             <button class="bg-blue-500 rounded-md" onClick={applyChanges}>
                 <span class="p-2 text-xl">Apply</span>
             </button>
-        </div>
-    );
-};
-
-const PlayerMenu: FC = () => {
-    return (
-        <div class="mx-4">
-            <PlayerSettingsMenu />
-            <PlayControls />
         </div>
     );
 };
