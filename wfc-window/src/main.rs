@@ -1,11 +1,9 @@
-use std::rc::Rc;
-
 use derive_more::IsVariant;
 use glam::UVec2;
 use image::Rgba;
 use pixels::Pixels;
 use wfc_lib::{
-    preprocessor::Pattern,
+    preprocessor::{Pattern, PreProcessor},
     simple_patterns::construct_simple_patterns,
     wfc::{Cell, Model},
     Wfc,
@@ -14,8 +12,14 @@ use wfc_lib::{
 const TILE_SIZE_DEFAULT: usize = 2;
 const PIXEL_SCALE_DEFAULT: u32 = 2;
 
-fn main() {
+// FIXME: window implementation is currently broken. Merge updated functionality from wfc-web into
+// shared space 
+// either:
+//  - make wfc-window into a lib/binary
+//  - make window.rs in wfc-lib and either keep wfc-window as separate thing or remove entirely
 
+fn main() {
+    panic!("Native window implementation is currently broken");
     use simplelog::*;
     CombinedLogger::init(vec![
         TermLogger::new(
@@ -61,27 +65,29 @@ fn run_dual() {
     );
 }
 
-#[allow(unused)]
-fn render_celtic_patterns() {
-    let mut win = WfcWindow::new(glam::UVec2::splat(128), 4, 64);
-    let image = image::io::Reader::open("./inputs/celtic.png")
-        .unwrap()
-        .decode()
-        .unwrap()
-        .to_rgba8();
-    let mut processor = wfc_lib::preprocessor::PreProcessor::new(
-        &image,
-        64,
-        wfc_lib::preprocessor::ProcessorConfig::default(),
-    );
-    let data = processor.process();
-    for (id, &loc) in processor.tiles.iter().enumerate() {
-        win.render_cell(loc / 64, data.patterns[id].clone());
-    }
-    loop {
-        win.render();
-    }
-}
+// TODO: this function is example of why preprocessor should take &mut self
+// and &image
+// 
+// #[allow(unused)]
+// fn render_celtic_patterns() {
+//     let mut win = WfcWindow::new(glam::UVec2::splat(128), 4, 64);
+//     let image = image::io::Reader::open("./inputs/celtic.png")
+//         .unwrap()
+//         .decode()
+//         .unwrap()
+//         .to_rgba8();
+//     let mut processor = wfc_lib::SimpleTiledPreProcessor::new(
+//         64,
+//         wfc_lib::preprocessor::ProcessorConfig::default(),
+//     );
+//     let data = processor.process(image);
+//     for (id, &loc) in processor.tiles.iter().enumerate() {
+//         win.render_cell(loc / 64, data.patterns[id].clone());
+//     }
+//     loop {
+//         win.render();
+//     }
+// }
 
 #[allow(unused)]
 fn render_celtic() {
@@ -186,10 +192,13 @@ impl WfcWindow {
     }
 
     pub fn update_frame_buffer(&mut self, model: &mut Model) {
-        while let Some(cell_loc) = model.updated_cells.pop() {
-            // TODO: move cell render here
-            self.update_cell_in_frame_buffer(model.get_cell(cell_loc).unwrap());
-        }
+        // FIXME: updated_cells is cleared after each step
+
+        // while let Some(cell_loc) = model.updated_cells.pop() {
+        //     // TODO: move cell render here
+
+        //     self.update_cell_in_frame_buffer(model.get_cell(cell_loc).unwrap());
+        // }
     }
 
     pub fn play(mut self, close_behavior: CompletionBehavior, wfc: Wfc) {
