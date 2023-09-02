@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html
   <head>
     <link data-trunk data-typescript rel="rust" />
     <link data-trunk rel="css" href="./tailwind.css" />
@@ -8,27 +8,7 @@
   </head>
 
   <body class="bg-gray-800">
-      <div id="title" class="flex flex-row justify-center p-2 mt-4">
-        <h1 class="lg:text-4xl text-6xl text-white">
-          <ul>
-            Wave Function Collapse!
-          </ul>
-        </h1>
-      </div>
-    <div id="page1" class="w-screen h-screen flex flex-col justify-center">
-      <div
-        id="player+menu"
-        class="flex flex-col w-full h-full justify-around lg:justify-center lg:flex-row py-4 px-8 m-4"
-      >
-        <div id="player">
-          <div id="canvas-container" class="flex justify-center">
-            <canvas class="object-contain" id="wfc"></canvas>
-          </div>
-        </div>
-        <div id="player-menu"> </div>
-      </div>
-    </div>
-
-    <link data-trunk rel="inline" href="./.webpack/main.bundle.js" />
+    <div id="app"></div>
+    <script data-trunk src="./.webpack/main.bundle.js"></script>
   </body>
 </html>

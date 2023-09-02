@@ -8,6 +8,11 @@ import {
     createContext,
     JSX,
     useContext,
+    createRenderEffect,
+    createResource,
+    InitializedResource,
+    createReaction,
+    onMount,
 } from "solid-js";
 import { SetStoreFunction, createStore, produce, unwrap } from "solid-js/store";
 import type {
@@ -39,8 +44,8 @@ const WANG_PRESETS = [
     "urban",
 ] as const;
 
-type PresetMap<V> = {[Key in Preset]: V};
-type WangPresetMap<V> = {[Key in WangPreset]: V};
+type PresetMap<V> = { [Key in Preset]: V };
+type WangPresetMap<V> = { [Key in WangPreset]: V };
 
 const WANG_PRESET_EDGE_TYPE: WangPresetMap<EdgeMethod> = {
     brench: "perfect",
@@ -53,7 +58,7 @@ const WANG_PRESET_EDGE_TYPE: WangPresetMap<EdgeMethod> = {
 } as const;
 
 // TODO: add non wang presets
-const PRESETS = ["corners",...WANG_PRESETS] as const;
+const PRESETS = ["corners", ...WANG_PRESETS] as const;
 
 type Preset = (typeof PRESETS)[number];
 type WangPreset = (typeof WANG_PRESETS)[number];
@@ -62,7 +67,7 @@ const DEFAULT_PRESET: Preset = "dual";
 
 function wang_preset_settings(em: EdgeMethod) {
     return {
-        adjacency_method: {edge: em},
+        adjacency_method: { edge: em },
         pattern_method: "tiled",
         tile_size: 32,
         output_dimensions: { x: 256, y: 256 },
@@ -71,14 +76,17 @@ function wang_preset_settings(em: EdgeMethod) {
 
 const PRESET_SETTINGS: PresetMap<PlayerSettings> = {
     ...(Object.fromEntries(
-        WANG_PRESETS.map((preset) => [preset, wang_preset_settings(WANG_PRESET_EDGE_TYPE[preset])]),
+        WANG_PRESETS.map((preset) => [
+            preset,
+            wang_preset_settings(WANG_PRESET_EDGE_TYPE[preset]),
+        ]),
     ) as WangPresetMap<PlayerSettings>),
     corners: {
         adjacency_method: { edge: "perfect" },
         pattern_method: "tiled",
         tile_size: 3,
         output_dimensions: { x: 60, y: 60 },
-    }
+    },
 };
 
 const PlayPauseButton: FC = () => {
@@ -316,6 +324,8 @@ type WfcInterface =
           controller: WfcController;
       };
 
+type WasmInterface = { loading: true } | { loading: false; wfc: Wfc };
+
 interface PlayerContextState {
     wfc: WfcInterface;
     playing: boolean;
@@ -345,15 +355,12 @@ const usePlayerContext = () => {
     return ctx;
 };
 
-async function init() {
-    type WasmInterface = { loading: true } | { loading: false; wfc: Wfc };
-    const [wasm, setWasm] = createSignal<WasmInterface>({ loading: true });
-    let default_image = await loadPresetImage(DEFAULT_PRESET);
+function createPlayerContext(useWasm: InitializedResource<WasmInterface>) {
     const [state, setState] = createStore<PlayerContextState>({
         wfc: { loading: true },
         settings: PRESET_SETTINGS[DEFAULT_PRESET],
         preset: DEFAULT_PRESET,
-        image: default_image,
+        image: new Uint8Array(),
         playing: false,
     });
 
@@ -364,14 +371,11 @@ async function init() {
                 s.image = bytes;
             }),
         );
-        let wasm_ = wasm();
-        if (wasm_.loading) {
+        let wasm = useWasm();
+        if (wasm.loading) {
             return;
         }
-        let wfcData = wasm_.wfc.build_from_json_settings(
-            bytes,
-            settings,
-        );
+        let wfcData = wasm.wfc.build_from_json_settings(bytes, settings);
         if (state.wfc.loading) {
             return;
         }
@@ -398,12 +402,7 @@ async function init() {
         let image = await loadPresetImage(p);
         loadWfc(image, settings);
     }
-    // set preset once wasm is done loading
-    createEffect(() => {
-        if (!state.wfc.loading) {
-            loadPreset(state.preset);
-        }
-    });
+
     const context: PlayerContextTuple = [
         state,
         {
@@ -419,51 +418,12 @@ async function init() {
             setState,
         },
     ];
+    return context;
+}
 
-    render(
-        () => (
-            <PlayerContext.Provider value={context}>
-                <PlayerMenu />
-            </PlayerContext.Provider>
-        ),
-        document.getElementById("player-menu")!,
-    );
-
-    window.addEventListener("resize", (_e) => {
-        if (state.wfc.loading) return;
-        let controller = state.wfc.controller;
-
-        let canvas_container = document.getElementById("canvas-container");
-        if (!canvas_container) {
-            console.error("canvas-container element not found!");
-            return;
-        }
-        let r = window.devicePixelRatio || 1;
-        let w = canvas_container.offsetWidth;
-        let h = canvas_container.offsetHeight;
-        let styles = window.getComputedStyle(canvas_container);
-        w =
-            w -
-            parseFloat(styles.paddingLeft) -
-            parseFloat(styles.paddingRight) -
-            parseFloat(styles.marginLeft) -
-            parseFloat(styles.marginRight);
-        h =
-            h -
-            parseFloat(styles.paddingTop) -
-            parseFloat(styles.paddingBottom) -
-            parseFloat(styles.marginTop) -
-            parseFloat(styles.marginBottom);
-        // NOTE: scaling by r converts w,h into
-        // winit PhysicalSize units
-        w = Math.round(w * r);
-        h = Math.round(h * r);
-        controller.resize_canvas(w, h);
-    });
-
+async function waitForWasm() {
     // separated for type checking
-    // TODO: handle error case with reject()
-    const wfcPromise: Promise<Wfc> = new Promise((resolve) => {
+    let wasm: Wfc = await new Promise((resolve) => {
         // Wait for wasm module to load
         const intervalId = setInterval(() => {
             console.log("waiting for wasm init");
@@ -471,24 +431,125 @@ async function init() {
                 clearInterval(intervalId);
                 resolve(window.wasm as Wfc);
             }
-        }, 100);
+        }, 10);
     });
-    // TODO: put this in a createResource()
-    wfcPromise
-        .then(async (wasm_) => {
-            console.log("wasm loaded");
-            const display = await wasm_.WfcWindow.new();
-            const controller = wasm_.WfcController.init(display);
-            console.log("attaching window");
-            setWasm({ loading: false, wfc: wasm_ });
-            setState("wfc", { loading: false, controller });
-            return display;
-        })
-        .then((display) => {
-            console.log("starting event loop");
-            // NOTE: this is blocking! nothing after this will run!
-            display.start_event_loop();
-        });
+    console.log("wasm loaded");
+    // createResource has a .loading attibute on the returned signal however it
+    // does not provide type checking for the signal itself
+    return { wfc: wasm, loading: false };
 }
 
-init();
+function getCanvasContainerSize(canvas_container: HTMLElement) {
+    let r = window.devicePixelRatio || 1;
+    let w = canvas_container.offsetWidth;
+    let h = canvas_container.offsetHeight;
+    let styles = window.getComputedStyle(canvas_container);
+    w =
+        w -
+        parseFloat(styles.paddingLeft) -
+        parseFloat(styles.paddingRight) -
+        parseFloat(styles.marginLeft) -
+        parseFloat(styles.marginRight);
+    h =
+        h -
+        parseFloat(styles.paddingTop) -
+        parseFloat(styles.paddingBottom) -
+        parseFloat(styles.marginTop) -
+        parseFloat(styles.marginBottom);
+    // NOTE: scaling by r converts w,h into
+    // winit PhysicalSize units
+    w = Math.round(w * r);
+    h = Math.round(h * r);
+    return [w, h];
+}
+
+function App() {
+    // TODO: figure out better way to handle canvas sizing that prevents menu
+    // moving on load
+    const [useWasm] = createResource<WasmInterface>(waitForWasm, {
+        initialValue: { loading: true },
+    });
+    const ctx = createPlayerContext(useWasm);
+    let state = ctx[0];
+    let [, { loadPreset, setState }] = ctx;
+
+    let canvasRef: HTMLCanvasElement | undefined;
+    let canvasContainerRef: HTMLDivElement | undefined;
+
+    // whenever the wasm loading state changes do all of this
+    // NOTE: I don't know if this relies on the wasm not being loaded
+    // i.e. I don't know at which stage in the component lifecycle this runs
+    let trackWfc = createReaction(async () => {
+        if (!canvasRef) {
+            console.error("canvasRef not set!");
+            return;
+        }
+
+        let wasm = useWasm();
+        if (wasm.loading) return;
+        let wfc = wasm.wfc;
+
+        console.log("attaching window");
+        const display = await wfc.WfcWindow.new(canvasRef);
+        const controller = wfc.WfcController.init(display);
+        setState("wfc", { loading: false, controller });
+        loadPreset(state.preset);
+
+        console.log("starting event loop");
+        // NOTE: this is blocking! nothing after this will run!
+        display.start_event_loop();
+    });
+    trackWfc(() => useWasm().loading);
+
+
+    window.addEventListener("resize", (_e) => {
+        if (state.wfc.loading ) {
+            console.log("could not resize canvas... wasm not loaded")
+            return;
+        }
+        if (!canvasContainerRef) {
+
+            console.log("could not resize canvas... no ref to canvas container")
+            return;
+        }
+        let controller = state.wfc.controller;
+        let [w, h] = getCanvasContainerSize(canvasContainerRef);
+        console.log("resizing canvas to:", w, h);
+        controller.resize_canvas(w, h);
+    });
+
+    return (
+        <PlayerContext.Provider value={ctx}>
+            <div id="title" class="flex flex-row justify-center p-2 my-4">
+                <h1 class="lg:text-4xl text-6xl text-white">
+                    <ul>Wave Function Collapse!</ul>
+                </h1>
+            </div>
+            <div
+                id="page1"
+                class="w-screen h-screen flex flex-col justify-center"
+            >
+                <div
+                    id="player+menu"
+                    class="flex flex-col w-full h-full justify-around lg:justify-center lg:flex-row py-4 px-8 m-4"
+                >
+                    <div id="player">
+                        <div ref={canvasContainerRef} id="canvas-container" class="flex justify-center">
+                            <canvas
+                                ref={canvasRef}
+                                class="object-contain"
+                                id="wfc"
+                            ></canvas>
+                        </div>
+                    </div>
+                    <div class="mx-4">
+                        <PlayerSettingsMenu />
+                        <PlayControls />
+                    </div>
+                </div>
+            </div>
+        </PlayerContext.Provider>
+    );
+}
+
+render(() => <App />, document.getElementById("app")!);
