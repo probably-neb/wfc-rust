@@ -15,6 +15,7 @@ import type {
     WfcController,
     PlayerSettings,
     EdgeMethod,
+    AdjacencyMethod,
 } from "./wfc-web.d.ts";
 
 import type * as WfcNamespace from "./wfc-web.d.ts";
@@ -64,7 +65,7 @@ function wang_preset_settings(em: EdgeMethod) {
     return {
         adjacency_method: { edge: em },
         pattern_method: "tiled",
-        tile_size: {x: 32, y: 32},
+        tile_size: { x: 32, y: 32 },
         output_dimensions: { x: 256, y: 256 },
     };
 }
@@ -79,7 +80,7 @@ const PRESET_SETTINGS: PresetMap<PlayerSettings> = {
     corners: {
         adjacency_method: { edge: "perfect" },
         pattern_method: "tiled",
-        tile_size: {x: 3, y: 3},
+        tile_size: { x: 3, y: 3 },
         output_dimensions: { x: 60, y: 60 },
     },
 };
@@ -274,6 +275,45 @@ const PlayerSettingsMenu: FC = () => {
                             )
                         }
                     ></input>
+                </div>
+                <div>
+                    <span class="mr-1">Pattern Method</span>
+                    <select
+                        class="border-2 text-white bg-gray-500 rounded-sm p-1"
+                        value={settings.pattern_method}
+                    >
+                        <option value="tiled">Tiled</option>
+                        {/*TODO: Overlapping optionn*/}
+                    </select>
+                </div>
+                <div>
+                    <span class="mr-1">Adjacency Method</span>
+                    <select
+                        class="border-2 text-white bg-gray-500 rounded-sm p-1"
+                        value={
+                            settings.adjacency_method === "adjacency"
+                                ? settings.adjacency_method
+                                : settings.adjacency_method.edge
+                        }
+                        onChange={(e) => {
+                            let selected = e.target.selectedOptions[0];
+                            let is_edge_group =
+                                selected.parentElement?.tagName === "OPTGROUP";
+                            let adj_method: AdjacencyMethod = (
+                                is_edge_group
+                                    ? { edge: selected.value }
+                                    : selected.value
+                            ) as AdjacencyMethod;
+                            setSettings("adjacency_method", adj_method);
+                        }}
+                    >
+                        <option value="adjacency">Adjacency</option>
+                        <optgroup label="Edge">
+                            <option value="perfect">Perfect</option>
+                            <option value="flip">Flip</option>
+                            <option value="adjacent">Adjacent</option>
+                        </optgroup>
+                    </select>
                 </div>
             </PlayerSettingsSection>
             <Divider />
@@ -501,15 +541,15 @@ function App() {
     });
     trackWfc(() => useWasm().loading);
 
-
     window.addEventListener("resize", (_e) => {
-        if (state.wfc.loading ) {
-            console.log("could not resize canvas... wasm not loaded")
+        if (state.wfc.loading) {
+            console.log("could not resize canvas... wasm not loaded");
             return;
         }
         if (!canvasContainerRef) {
-
-            console.log("could not resize canvas... no ref to canvas container")
+            console.log(
+                "could not resize canvas... no ref to canvas container",
+            );
             return;
         }
         let controller = state.wfc.controller;
@@ -534,7 +574,11 @@ function App() {
                     class="flex flex-col w-full h-full justify-around lg:justify-center lg:flex-row py-4 px-8 m-4"
                 >
                     <div id="player">
-                        <div ref={canvasContainerRef} id="canvas-container" class="flex justify-center">
+                        <div
+                            ref={canvasContainerRef}
+                            id="canvas-container"
+                            class="flex justify-center"
+                        >
                             <canvas
                                 ref={canvasRef}
                                 class="object-contain"
