@@ -79,6 +79,21 @@ pub enum PatternMethod {
     Tiled,
 }
 
+#[cfg(feature = "web")]
+#[derive(serde::Deserialize, tsify::Tsify, Copy, Clone, Debug)]
+#[serde(rename = "UVec2", remote = "UVec2")]
+/// Clone of UVec2 for deserializing
+pub struct WrappedUVec2 {
+    x: u32,
+    y: u32,
+}
+    #[cfg(feature = "web")]
+    impl Into<UVec2> for WrappedUVec2 {
+        fn into(self) -> UVec2 {
+            return UVec2::new(self.x, self.y);
+        }
+    }
+
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(
     feature = "web",
@@ -86,6 +101,7 @@ pub enum PatternMethod {
     serde(rename_all = "lowercase")
 )]
 pub struct Config {
+    #[cfg_attr(feature = "web", serde(with = "WrappedUVec2"))]
     pub tile_size: UVec2,
     pub adjacency_method: AdjacencyMethod,
     pub pattern_method: PatternMethod,

@@ -221,8 +221,24 @@ pub mod Settings {
     use wfc_lib::preprocessor::{AdjacencyMethod, PatternMethod};
 
     #[derive(Deserialize, tsify::Tsify)]
+    #[serde(rename = "UVec2", remote = "UVec2")]
+    /// Clone of UVec2 for deserializing
+    pub struct WrappedUVec2 {
+        x: u32,
+        y: u32,
+    }
+
+    impl Into<UVec2> for WrappedUVec2 {
+        fn into(self) -> UVec2 {
+            return UVec2::new(self.x, self.y);
+        }
+    }
+
+    #[derive(Deserialize, tsify::Tsify)]
     pub struct PlayerSettings {
+        #[serde(with = "WrappedUVec2")]
         pub tile_size: UVec2,
+        #[serde(with = "WrappedUVec2")]
         pub output_dimensions: UVec2,
         pub pattern_method: PatternMethod,
         pub adjacency_method: AdjacencyMethod,
