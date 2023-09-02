@@ -219,22 +219,9 @@ pub mod Settings {
     use wfc_lib::preprocessor::{AdjacencyMethod, PatternMethod};
 
     #[derive(Deserialize, tsify::Tsify)]
-    /// Clone of UVec2 for deserializing
-    pub struct PlayerSettingsOutputDimensions {
-        x: u32,
-        y: u32,
-    }
-
-    impl Into<UVec2> for PlayerSettingsOutputDimensions {
-        fn into(self) -> UVec2 {
-            return UVec2::new(self.x, self.y);
-        }
-    }
-
-    #[derive(Deserialize, tsify::Tsify)]
     pub struct PlayerSettings {
         pub tile_size: u32,
-        pub output_dimensions: PlayerSettingsOutputDimensions,
+        pub output_dimensions: UVec2,
         pub pattern_method: PatternMethod,
         pub adjacency_method: AdjacencyMethod,
     }

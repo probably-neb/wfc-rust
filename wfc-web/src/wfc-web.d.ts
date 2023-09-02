@@ -6,14 +6,14 @@
 * @returns {WfcData}
 */
 export function build_from_json_settings(image_bytes: Uint8Array, settings: any): WfcData;
-export interface PlayerSettingsOutputDimensions {
+export interface UVec2 {
     x: number;
     y: number;
 }
 
 export interface PlayerSettings {
     tile_size: number;
-    output_dimensions: PlayerSettingsOutputDimensions;
+    output_dimensions: UVec2;
     pattern_method: PatternMethod;
     adjacency_method: AdjacencyMethod;
 }
