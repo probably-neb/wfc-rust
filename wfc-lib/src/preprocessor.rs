@@ -373,7 +373,7 @@ fn preprocess_adjacent_edges(image: RgbaImage, config: Config) -> WfcData {
         if !on_bottom_edge {
             let bottom_loc = loc - UVec2 { x: 0, y: tile_size.y };
             let bottom_id = loc_id_map[bottom_loc].expect("tile below already processed")[Up];
-            edge_adjacencies.allow(pattern_id, bottom_id, Up);
+            edge_adjacencies.allow(pattern_id, bottom_id, Down);
         }
         if !on_left_edge {
             let left_loc = loc - UVec2 { x: tile_size.x, y: 0 };
