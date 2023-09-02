@@ -17,7 +17,7 @@ fn main() {
 pub struct WfcData {
     model: Model,
     patterns: Vec<Pattern>,
-    tile_size: usize,
+    tile_size: UVec2,
     output_dimensions: UVec2,
 }
 
@@ -158,7 +158,8 @@ fn update_frame_buffer(pixels: &mut Pixels, data: &WfcData, mut updated_cells: V
         let cell_pattern = if let Some(final_pattern) = cell.collapsed_to {
             patterns[final_pattern].to_owned()
         } else {
-            let mut counts = vec![[0; 4]; tile_size * tile_size];
+            let num_pixels = tile_size.x * tile_size.y;
+            let mut counts = vec![[0; 4]; num_pixels as usize];
             let allowed_tile_ids = cell.domain.allowed_tile_ids();
 
             for pattern_id in cell.domain.allowed_tile_ids() {
@@ -171,7 +172,7 @@ fn update_frame_buffer(pixels: &mut Pixels, data: &WfcData, mut updated_cells: V
                 }
             }
 
-            let mut new_pattern: Pattern = vec![[0; 4]; tile_size * tile_size];
+            let mut new_pattern: Pattern = vec![[0; 4]; num_pixels as usize];
             let total_weight = cell.probability_dict.total_count;
 
             for (i, c) in counts.iter().enumerate() {
@@ -185,9 +186,9 @@ fn update_frame_buffer(pixels: &mut Pixels, data: &WfcData, mut updated_cells: V
         };
 
         // TODO: refactor to copy_from_slice rows at a time instead of pixels
-        let frame_coord = cell_loc * tile_size as u32;
-        for x in 0..tile_size {
-            for y in 0..tile_size {
+        let frame_coord = cell_loc * tile_size;
+        for x in 0..tile_size.x {
+            for y in 0..tile_size.y {
                 // TODO: simplify this logic
                 let frame_idx = UVec2 {
                     x: x as u32,
@@ -199,7 +200,8 @@ fn update_frame_buffer(pixels: &mut Pixels, data: &WfcData, mut updated_cells: V
                     .get_mut(idx..idx + 4)
                     .unwrap_or_else(|| panic!("pixel at {:?} should be in bounds but loc {cell_loc:?} and frame cell {frame_idx:?} aren't in bounds", frame_idx));
 
-                let cell_pixel: [u8; 4] = cell_pattern[y * tile_size + x].map(|c| c as u8);
+                let cell_pixel_idx = y * tile_size.x + x;
+                let cell_pixel: [u8; 4] = cell_pattern[cell_pixel_idx as usize].map(|c| c as u8);
 
                 frame_pixel.copy_from_slice(&cell_pixel);
             }
@@ -214,13 +216,14 @@ pub mod Settings {
     use wfc_lib::preprocessor::{AdjacencyMethod, PatternMethod};
 
     #[derive(Deserialize, tsify::Tsify)]
+    #[serde(rename = "UVec2", remote = "UVec2")]
     /// Clone of UVec2 for deserializing
-    pub struct PlayerSettingsOutputDimensions {
+    pub struct WrappedUVec2 {
         x: u32,
         y: u32,
     }
 
-    impl Into<UVec2> for PlayerSettingsOutputDimensions {
+    impl Into<UVec2> for WrappedUVec2 {
         fn into(self) -> UVec2 {
             return UVec2::new(self.x, self.y);
         }
@@ -228,8 +231,10 @@ pub mod Settings {
 
     #[derive(Deserialize, tsify::Tsify)]
     pub struct PlayerSettings {
-        pub tile_size: u32,
-        pub output_dimensions: PlayerSettingsOutputDimensions,
+        #[serde(with = "WrappedUVec2")]
+        pub tile_size: UVec2,
+        #[serde(with = "WrappedUVec2")]
+        pub output_dimensions: UVec2,
         pub pattern_method: PatternMethod,
         pub adjacency_method: AdjacencyMethod,
     }
@@ -284,7 +289,7 @@ pub fn build_from_json_settings(
     return WfcData {
         model,
         patterns: pp_data.patterns,
-        tile_size: settings.tile_size as usize,
+        tile_size: settings.tile_size,
         output_dimensions,
     };
 }

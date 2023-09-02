@@ -1,25 +1,21 @@
 import { render } from "solid-js/web";
 import {
-    createSignal,
     Show,
     createEffect,
-    Accessor,
     Component as FC,
     createContext,
     JSX,
     useContext,
-    createRenderEffect,
     createResource,
     InitializedResource,
     createReaction,
-    onMount,
 } from "solid-js";
 import { SetStoreFunction, createStore, produce, unwrap } from "solid-js/store";
 import type {
     WfcController,
-    WfcData,
     PlayerSettings,
     EdgeMethod,
+    AdjacencyMethod,
 } from "./wfc-web.d.ts";
 
 import type * as WfcNamespace from "./wfc-web.d.ts";
@@ -69,7 +65,7 @@ function wang_preset_settings(em: EdgeMethod) {
     return {
         adjacency_method: { edge: em },
         pattern_method: "tiled",
-        tile_size: 32,
+        tile_size: { x: 32, y: 32 },
         output_dimensions: { x: 256, y: 256 },
     };
 }
@@ -84,7 +80,7 @@ const PRESET_SETTINGS: PresetMap<PlayerSettings> = {
     corners: {
         adjacency_method: { edge: "perfect" },
         pattern_method: "tiled",
-        tile_size: 3,
+        tile_size: { x: 3, y: 3 },
         output_dimensions: { x: 60, y: 60 },
     },
 };
@@ -155,7 +151,6 @@ function PlayControls() {
 }
 
 async function loadPresetImage(preset_name: Preset): Promise<Uint8Array> {
-    const preset = PRESET_SETTINGS[preset_name];
     const path = `./assets/presets/${preset_name}.png`;
     const bytes: Uint8Array = await fetch(path)
         .then((response) => response.blob())
@@ -177,10 +172,8 @@ async function loadPresetImage(preset_name: Preset): Promise<Uint8Array> {
     return bytes;
 }
 
-const PresetSelector: FC<{ setPlayerSettings: (s: PlayerSettings) => void }> = (
-    props,
-) => {
-    const [ctx, { loadWfc, loadPreset: setPreset }] = usePlayerContext();
+const PresetSelector: FC = () => {
+    const [ctx, { loadPreset: setPreset }] = usePlayerContext();
     // TODO: add button toggle to set whether to load preset settings
     // along with image (so that users can maintain their own settings)
     return (
@@ -251,7 +244,7 @@ const PlayerSettingsMenu: FC = () => {
             class="flex flex-row lg:flex-col justify-around rounded-md border-2 text-white p-2"
         >
             <PlayerSettingsSection>
-                <PresetSelector setPlayerSettings={setSettings} />
+                <PresetSelector />
             </PlayerSettingsSection>
             <Divider />
             <PlayerSettingsSection title="Preprocessor Settings">
@@ -259,12 +252,68 @@ const PlayerSettingsMenu: FC = () => {
                     <span class="mr-1">Tile Size:</span>
                     <input
                         type="number"
-                        class="w-10 bg-transparent border-[1px] truncate hover:whitespace-normal"
-                        value={settings.tile_size}
+                        class="w-12 bg-transparent border-[1px]"
+                        value={settings.tile_size.x}
                         onChange={(e) =>
-                            setSettings("tile_size", e.target.valueAsNumber)
+                            setSettings(
+                                "tile_size",
+                                "x",
+                                e.target.valueAsNumber,
+                            )
                         }
                     ></input>
+                    <span class="mx-1">x</span>
+                    <input
+                        type="number"
+                        class="w-12 bg-transparent border-[1px]"
+                        value={settings.tile_size.y}
+                        onChange={(e) =>
+                            setSettings(
+                                "tile_size",
+                                "y",
+                                e.target.valueAsNumber,
+                            )
+                        }
+                    ></input>
+                </div>
+                <div>
+                    <span class="mr-1">Pattern Method</span>
+                    <select
+                        class="border-2 text-white bg-gray-500 rounded-sm p-1"
+                        value={settings.pattern_method}
+                    >
+                        <option value="tiled">Tiled</option>
+                        {/*TODO: Overlapping optionn*/}
+                    </select>
+                </div>
+                <div>
+                    <span class="mr-1">Adjacency Method</span>
+                    <select
+                        class="border-2 text-white bg-gray-500 rounded-sm p-1"
+                        value={
+                            settings.adjacency_method === "adjacency"
+                                ? settings.adjacency_method
+                                : settings.adjacency_method.edge
+                        }
+                        onChange={(e) => {
+                            let selected = e.target.selectedOptions[0];
+                            let is_edge_group =
+                                selected.parentElement?.tagName === "OPTGROUP";
+                            let adj_method: AdjacencyMethod = (
+                                is_edge_group
+                                    ? { edge: selected.value }
+                                    : selected.value
+                            ) as AdjacencyMethod;
+                            setSettings("adjacency_method", adj_method);
+                        }}
+                    >
+                        <option value="adjacency">Adjacency</option>
+                        <optgroup label="Edge">
+                            <option value="perfect">Perfect</option>
+                            <option value="flip">Flip</option>
+                            <option value="adjacent">Adjacent</option>
+                        </optgroup>
+                    </select>
                 </div>
             </PlayerSettingsSection>
             <Divider />
@@ -302,15 +351,6 @@ const PlayerSettingsMenu: FC = () => {
             <button class="bg-blue-500 rounded-md" onClick={applyChanges}>
                 <span class="p-2 text-xl">Apply</span>
             </button>
-        </div>
-    );
-};
-
-const PlayerMenu: FC = () => {
-    return (
-        <div class="mx-4">
-            <PlayerSettingsMenu />
-            <PlayControls />
         </div>
     );
 };
@@ -501,15 +541,15 @@ function App() {
     });
     trackWfc(() => useWasm().loading);
 
-
     window.addEventListener("resize", (_e) => {
-        if (state.wfc.loading ) {
-            console.log("could not resize canvas... wasm not loaded")
+        if (state.wfc.loading) {
+            console.log("could not resize canvas... wasm not loaded");
             return;
         }
         if (!canvasContainerRef) {
-
-            console.log("could not resize canvas... no ref to canvas container")
+            console.log(
+                "could not resize canvas... no ref to canvas container",
+            );
             return;
         }
         let controller = state.wfc.controller;
@@ -534,7 +574,11 @@ function App() {
                     class="flex flex-col w-full h-full justify-around lg:justify-center lg:flex-row py-4 px-8 m-4"
                 >
                     <div id="player">
-                        <div ref={canvasContainerRef} id="canvas-container" class="flex justify-center">
+                        <div
+                            ref={canvasContainerRef}
+                            id="canvas-container"
+                            class="flex justify-center"
+                        >
                             <canvas
                                 ref={canvasRef}
                                 class="object-contain"

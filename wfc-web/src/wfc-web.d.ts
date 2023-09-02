@@ -6,22 +6,27 @@
 * @returns {WfcData}
 */
 export function build_from_json_settings(image_bytes: Uint8Array, settings: any): WfcData;
-export interface PlayerSettingsOutputDimensions {
+export interface UVec2 {
     x: number;
     y: number;
 }
 
 export interface PlayerSettings {
-    tile_size: number;
-    output_dimensions: PlayerSettingsOutputDimensions;
+    tile_size: UVec2;
+    output_dimensions: UVec2;
     pattern_method: PatternMethod;
     adjacency_method: AdjacencyMethod;
 }
 
 export interface Config {
-    tile_size: number;
+    tile_size: UVec2;
     adjacency_method: AdjacencyMethod;
     pattern_method: PatternMethod;
+}
+
+export interface UVec2 {
+    x: number;
+    y: number;
 }
 
 export type PatternMethod = "overlapping" | "tiled";
