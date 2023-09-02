@@ -220,7 +220,7 @@ pub mod Settings {
 
     #[derive(Deserialize, tsify::Tsify)]
     pub struct PlayerSettings {
-        pub tile_size: u32,
+        pub tile_size: UVec2,
         pub output_dimensions: UVec2,
         pub pattern_method: PatternMethod,
         pub adjacency_method: AdjacencyMethod,
