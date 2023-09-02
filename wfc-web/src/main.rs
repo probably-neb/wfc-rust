@@ -33,15 +33,10 @@ pub struct WfcWindow {
 #[wasm_bindgen]
 impl WfcWindow {
     // TODO: move pixels setup to run function and remove output_dimensions and tile_size params
-    pub async fn new() -> Self {
+    pub async fn new(canvas: web_sys::HtmlCanvasElement) -> Self {
         // FIXME: set clippy target arch to wasm32 to avoid wasm
         // target errors
         let event_loop = winit::event_loop::EventLoopBuilder::<WfcEvent>::with_user_event().build();
-        let canvas = web_sys::window()
-            .and_then(|win| win.document())
-            .and_then(|doc| doc.get_element_by_id("wfc"))
-            .and_then(|canvas| canvas.dyn_into::<web_sys::HtmlCanvasElement>().ok())
-            .expect("couldn't find canvas element with id=\"wfc\"");
         let window = {
             winit::window::WindowBuilder::new()
                 .with_title("WFC")

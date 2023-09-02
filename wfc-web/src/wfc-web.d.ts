@@ -74,9 +74,10 @@ export class WfcData {
 export class WfcWindow {
   free(): void;
 /**
+* @param {HTMLCanvasElement} canvas
 * @returns {Promise<WfcWindow>}
 */
-  static new(): Promise<WfcWindow>;
+  static new(canvas: HTMLCanvasElement): Promise<WfcWindow>;
 /**
 */
   start_event_loop(): void;
@@ -88,7 +89,7 @@ export interface InitOutput {
   readonly memory: WebAssembly.Memory;
   readonly __wbg_wfcdata_free: (a: number) => void;
   readonly __wbg_wfcwindow_free: (a: number) => void;
-  readonly wfcwindow_new: () => number;
+  readonly wfcwindow_new: (a: number) => number;
   readonly wfcwindow_start_event_loop: (a: number) => void;
   readonly build_from_json_settings: (a: number, b: number, c: number) => number;
   readonly __wbg_wfccontroller_free: (a: number) => void;
