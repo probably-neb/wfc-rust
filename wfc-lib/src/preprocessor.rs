@@ -1,7 +1,7 @@
 use glam::UVec2;
 use image::{GenericImageView, ImageBuffer, Rgba, RgbaImage, SubImage};
 use std::{
-    collections::{HashMap, HashSet, hash_map::DefaultHasher},
+    collections::{hash_map::DefaultHasher, HashMap, HashSet},
     vec::Vec,
 };
 
@@ -11,6 +11,7 @@ use crate::{
         CardinalDirs::{self, Down, Left, Right, Up},
     },
     tile::{IdMap, TileId},
+    UVec2Iter,
 };
 
 /// The actual pixel data of the tile_size x tile_size rectangle (PatternRect)
@@ -22,6 +23,7 @@ pub type U8Pattern = Vec<u8>;
 type PatternSubImage<'a> = SubImage<&'a ImageBuffer<Rgba<u8>, Vec<u8>>>;
 type LocIdHMap = HashMap<UVec2, usize>;
 type Edge = RgbaPattern;
+type EdgeId = usize;
 // type IdPatternHMap = HashMap<usize, Pattern>;
 
 /// The data returned by a preprocessor required to run the wfc algorithm
@@ -87,12 +89,12 @@ pub struct WrappedUVec2 {
     x: u32,
     y: u32,
 }
-    #[cfg(feature = "web")]
-    impl Into<UVec2> for WrappedUVec2 {
-        fn into(self) -> UVec2 {
-            return UVec2::new(self.x, self.y);
-        }
+#[cfg(feature = "web")]
+impl Into<UVec2> for WrappedUVec2 {
+    fn into(self) -> UVec2 {
+        return UVec2::new(self.x, self.y);
     }
+}
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(
@@ -158,12 +160,20 @@ fn preprocess_simple_tiled(image: RgbaImage, config: Config) -> WfcData {
         let on_left_edge = loc.x == 0;
         let on_bottom_edge = loc.y == 0;
         if !on_bottom_edge {
-            let bottom_loc = loc - UVec2 { x: 0, y: tile_size.y };
+            let bottom_loc = loc
+                - UVec2 {
+                    x: 0,
+                    y: tile_size.y,
+                };
             let bottom_id = loc_id_map[bottom_loc].expect("tile below already processed");
             adjacency_rules.allow(pattern_id, bottom_id, Up);
         }
         if !on_left_edge {
-            let left_loc = loc - UVec2 { x: tile_size.x, y: 0 };
+            let left_loc = loc
+                - UVec2 {
+                    x: tile_size.x,
+                    y: 0,
+                };
             let left_id = loc_id_map[left_loc].expect("tile left already processed");
             adjacency_rules.allow(pattern_id, left_id, Left);
         }
@@ -190,7 +200,6 @@ fn preprocess_edges(image: RgbaImage, config: Config) -> WfcData {
     let mut tile_frequencies = IdMap::new();
 
     let mut current_id = 0;
-
 
     for loc in get_tile_locs(image.dimensions().into(), tile_size) {
         let pattern: PatternRef = pattern_at(&image, loc, tile_size);
@@ -291,109 +300,136 @@ fn preprocess_edges(image: RgbaImage, config: Config) -> WfcData {
 
 fn preprocess_adjacent_edges(image: RgbaImage, config: Config) -> WfcData {
     let tile_size = config.tile_size;
-    // the unique patterns in the image
-    let mut patterns: IdMap<Pattern> = IdMap::new();
-    // map of edge id to the patterns it was found in organized by the side it was found on
-    let mut edgemap: IdMap<[HashSet<usize>; 4]> = IdMap::new();
-    let mut edge_ids: HashMap<Edge, usize> = HashMap::new();
-    let mut tile_frequencies: IdMap<TileId> = IdMap::new();
-
-    let mut current_id = 0;
-    let mut current_edge_id = 0;
+    let mut patterns: HashMap<Pattern, (TileId, usize)> = HashMap::new();
+    let mut edges: HashMap<Edge, EdgeId> = HashMap::new();
     let image_dims: UVec2 = image.dimensions().into();
-    // ids of each pattern's edges
-    let mut pattern_edge_ids: IdMap<[usize; 4]> = IdMap::new();
-    let mut edge_adjacencies = AdjacencyRules::new();
     let mut loc_id_map = crate::utils::UVecVec(vec![
         vec![None; image_dims.x as usize];
         image_dims.y as usize
     ]);
+    let mut edge_adjacencies = AdjacencyRules::new();
 
-    let locs = get_tile_locs(image_dims, tile_size);
-    for loc in locs {
+    // map of [pattern_id][side] => edge_id
+    let mut pattern_edge_ids = IdMap::new();
+    // map of [edge_id][side] => pattern_id[] (patterns that had [edge_id] on [side])
+    let mut edge_pattern_map: IdMap<[HashSet<TileId>; 4]> = IdMap::new();
+
+    for loc in get_tile_locs(image_dims, tile_size) {
         let pattern_img = sub_image_at(&image, loc, tile_size);
         let pattern: Pattern = pattern_img.pixels().map(|(_, _, rgba)| rgba.0).collect();
-        
-        let pattern_id = if let Some(existing_id) = patterns.iter().position(|p| p == &pattern) {
-            tile_frequencies[existing_id] += 1;
-            existing_id
+        let (pattern_id, edge_ids) = if let Some((existing_id, count)) = patterns.get_mut(&pattern)
+        {
+            // existing pattern
+            let id = *existing_id;
+            *count += 1;
+            (id, pattern_edge_ids[id])
         } else {
-            // add new pattern
-            let id = current_id;
-            current_id += 1;
-            patterns.push(pattern);
-            tile_frequencies.push(1);
-            id
+            // new pattern
+            let pattern_id = patterns.len();
+            patterns.insert(pattern, (pattern_id, 1));
+            let pattern_edges = get_edges(&pattern_img, tile_size);
+            let edge_ids = pattern_edges.map(|edge| {
+                let edge_id = if let Some(&edge_id) = edges.get(&edge) {
+                    edge_id
+                } else {
+                    // new edge
+                    let edge_id = edges.len();
+                    edges.insert(edge, edge_id);
+                    edge_pattern_map.push(Default::default());
+                    edge_id
+                };
+                edge_id
+            });
+
+            // PERF: unroll
+            for side in 0..4 {
+                edge_pattern_map[edge_ids[side]][side].insert(pattern_id);
+            }
+            pattern_edge_ids.push(edge_ids);
+            (pattern_id, edge_ids)
         };
 
-        // mut and Option are used to avoid cloning the edges
-        let mut edges = get_edges(&pattern_img, tile_size).map(|e| Some(e));
-        pattern_edge_ids.push(Default::default());
-        for side in 0..4 {
-            let edge_id = match edge_ids.get(edges[side].as_ref().unwrap()) {
-                Some(&edge_id) => {
-                    edgemap[edge_id][side].insert(pattern_id);
-                    edge_id
-                }
-                None => {
-                    let edge_id = current_edge_id;
-                    current_edge_id += 1;
-                    edge_ids.insert(edges[side].take().unwrap(), edge_id);
-                    let mut edge_patterns: [HashSet<usize>; 4] = Default::default();
-                    edge_patterns[side].insert(pattern_id);
-                    edgemap.push(edge_patterns);
-                    edge_id
-                }
-            };
-            pattern_edge_ids[pattern_id][side] = edge_id;
-        }
-        loc_id_map[loc] = Some(pattern_edge_ids[pattern_id]);
+        loc_id_map[loc] = Some(edge_ids);
 
-        // construct adjacency rules
-        // if self.config.wrap {
-        //     let max = image_dims - (image_dims % tile_size as u32) - UVec2::ONE;
-        //     let on_right_edge = loc.x == max.x;
-        //     let on_top_edge = loc.y == max.y;
-        //     if on_right_edge {
-        //         let left_loc = UVec2 { x: 0, y: loc.y };
-        //         let left_id = self.loc_id_map[&left_loc];
-        //         adjacency_rules.allow(pattern_id, left_id, Right);
-        //     }
-        //     if on_top_edge {
-        //         let bottom_loc = loc - UVec2 { x: loc.x, y: 0 };
-        //         let bottom_id = self.loc_id_map[&bottom_loc];
-        //         adjacency_rules.allow(pattern_id, bottom_id, Down);
-        //     }
-        // }
-
-        // patterns are processed in column major order so left (<) and below (v) tiles are already extracted
-        // add the adjacency rules in these directions if not on an edge
         let on_left_edge = loc.x == 0;
         let on_bottom_edge = loc.y == 0;
         if !on_bottom_edge {
-            let bottom_loc = loc - UVec2 { x: 0, y: tile_size.y };
-            let bottom_id = loc_id_map[bottom_loc].expect("tile below already processed")[Up];
-            edge_adjacencies.allow(pattern_id, bottom_id, Down);
+            // bottom edge of the current pattern
+            let bottom_edge_id = pattern_edge_ids[pattern_id][Down];
+            let bottom_loc = loc - UVec2::new(0, tile_size.y);
+            let tile_below_top_edge_id =
+                loc_id_map[bottom_loc].expect("tile below already processed")[Up];
+            edge_adjacencies.allow(bottom_edge_id, tile_below_top_edge_id, Down);
         }
         if !on_left_edge {
-            let left_loc = loc - UVec2 { x: tile_size.x, y: 0 };
-            let left_id = loc_id_map[left_loc].expect("tile left already processed")[Right];
-            edge_adjacencies.allow(pattern_id, left_id, Left);
+            let left_edge_id = pattern_edge_ids[pattern_id][Left];
+            let left_loc = loc - UVec2::new(tile_size.x, 0);
+            let tile_left_right_edge_id =
+                loc_id_map[left_loc].expect("tile left already processed")[Right];
+            edge_adjacencies.allow(left_edge_id, tile_left_right_edge_id, Left);
         }
     }
+    #[cfg(test)]
+    assert_eq!(edges.len(),2);
 
-    let mut adjacency_rules: AdjacencyRules = AdjacencyRules::new();
+    println!(
+        "edge adjs: {:?} len={}",
+        edge_adjacencies,
+        edge_adjacencies.len()
+    );
+    println!(
+        "edge pmap: {:?} len={}",
+        edge_pattern_map,
+        edge_pattern_map.len()
+    );
+    let mut adjacency_rules = AdjacencyRules::new();
     for pattern_id in 0..patterns.len() {
-        for (side, &edge_id) in pattern_edge_ids[pattern_id].iter().enumerate() {
-            let dir: CardinalDirs = side.into();
-            for other_pattern_id in edgemap[edge_id][-dir].iter() {
-                adjacency_rules.allow(pattern_id, *other_pattern_id, dir);
+        // add left and bottom edges only because allowing a -> b also allows a <- b
+        let left_id = pattern_edge_ids[pattern_id][Left];
+        let adjacent_edges =
+            if let Some(adjacent_edges) = edge_adjacencies.maybe_enabled_by(left_id, Left) {
+                adjacent_edges
+            } else {
+                // if a unique edge is only found on the left side of the image and config.wrap is
+                // false then it will have no allowed neighbors
+                continue;
+            };
+
+        for adjacent_edge in adjacent_edges.iter() {
+            for other_pattern_id in edge_pattern_map[*adjacent_edge][Right].iter() {
+                adjacency_rules.allow(pattern_id, *other_pattern_id, Left);
+            }
+        }
+
+        let bottom_id = pattern_edge_ids[pattern_id][Down];
+        let adjacent_edges =
+            if let Some(adjacent_edges) = edge_adjacencies.maybe_enabled_by(bottom_id, Down) {
+                adjacent_edges
+            } else {
+                // if a unique edge is only found on the bottom side of the image and config.wrap is
+                // false then it will have no allowed neighbors
+                continue;
+            };
+        for adjacent_edge in adjacent_edges {
+            for other_pattern_id in edge_pattern_map[*adjacent_edge][Up].iter() {
+                adjacency_rules.allow(pattern_id, *other_pattern_id, Down);
             }
         }
     }
-    log::info!("found {} patterns", patterns.len());
 
-    // let patterns = patterns.into_iter().map(pattern_ref_to_owned).collect();
+    let mut pattern_data: Vec<(Pattern, usize, usize)> = patterns
+        .into_iter()
+        .map(|(p, (p_id, c))| (p, p_id, c))
+        .collect();
+    pattern_data.sort_by_key(|(_, p_id, _)| *p_id);
+
+    #[cfg(test)]
+    assert!(pattern_data
+        .iter()
+        .enumerate()
+        .all(|(i, (_, id, _))| i == *id));
+
+    let (patterns, tile_frequencies) = pattern_data.into_iter().map(|(p, _, c)| (p, c)).unzip();
     return WfcData {
         tile_frequencies,
         adjacency_rules,
@@ -485,4 +521,61 @@ fn pattern_ref_to_owned(pref: PatternRef) -> Pattern {
 #[cfg(test)]
 mod test {
     // TODO: recreate tests
+    use super::*;
+
+    #[test]
+    fn get_edges_1_row() {
+        const WIDTH: usize = 4;
+        let img_bytes: [u8; 4 * WIDTH] = [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 1, 1, 1, 1];
+        let img: ImageBuffer<Rgba<u8>, Vec<u8>> =
+            ImageBuffer::from_raw(WIDTH as u32, 1, img_bytes.to_vec()).unwrap();
+        let edges = get_edges(
+            &img.view(0, 0, WIDTH as u32, 1),
+            UVec2::new(WIDTH as u32, 1),
+        );
+        assert_eq!(edges[Up].len(), WIDTH);
+        assert_eq!(edges[Down], edges[Up]);
+        assert_eq!(
+            edges[Right], edges[Left],
+            "R {:?} != {:?} L",
+            edges[Right], edges[Left]
+        );
+        assert_eq!(edges[Left].len(), 1);
+    }
+
+    fn load_image_from_bytes(raw_data: &[u8]) -> image::RgbaImage {
+        // TODO: consider whether decoding here is really necessary
+        //
+        // Assuming it is so that Image figures out how to give me the vec of
+        // pixels I want
+        let reader = image::io::Reader::new(std::io::Cursor::new(raw_data))
+            .with_guessed_format()
+            .expect("Cursor io never fails");
+        let image = reader.decode().unwrap().to_rgba8();
+        return image;
+    }
+    const LEDGE_IMG: &[u8] = include_bytes!("../../inputs/ledge.png");
+    const DUAL_IMG: &[u8] = include_bytes!("../../inputs/dual.png");
+
+    #[test]
+    fn ledge_img() {
+        let image = load_image_from_bytes(DUAL_IMG);
+        let config = Config {
+            tile_size: UVec2::splat(32),
+            adjacency_method: AdjacencyMethod::Edge(EdgeMethod::Adjacent),
+            pattern_method: PatternMethod::Tiled,
+        };
+        let data = preprocess(image, config);
+        assert_eq!(
+            data.patterns.len(),
+            16,
+            "expected 16 patterns found: {}",
+            data.patterns.len()
+        );
+        assert_eq!(
+            data.patterns.len(),
+            data.tile_frequencies.len(),
+            "patterns.len != tile_frequencies.len"
+        );
+    }
 }

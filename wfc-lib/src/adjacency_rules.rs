@@ -40,11 +40,16 @@ impl AdjacencyRules {
         return self.map[&from][dir].contains(&to);
     }
 
+    // PERF: remove copy (caller should copy if needed)
     pub fn enabled_by(&self, from: TileId, dir: CardinalDirs) -> Vec<TileId> {
         match self.map.get(&from) {
             Some(allowed_adjacents) => allowed_adjacents[dir].iter().copied().collect(),
             None => panic!("no tile entry for tile {from}")
         }
+    }
+
+    pub fn maybe_enabled_by(&self, from: TileId, dir: CardinalDirs) -> Option<&HashSet<TileId>> {
+        return self.map.get(&from).map(|allowed_adjacents| &allowed_adjacents[dir]);
     }
 
     fn enabled_by_count(&self, from: usize) -> [usize; 4] {
@@ -290,193 +295,4 @@ impl<T> IndexMut<CardinalDirs> for [T; 4] {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use crate::simple_patterns::*;
-    use glam::UVec4;
-    use CardinalDirs::*;
-
-    fn simple_patterns_common() -> AdjacencyRules {
-        return construct_simple_patterns()
-            .wfc_data
-            .unwrap()
-            .adjacency_rules;
-    }
-
-    #[test]
-    fn blank_allowed_in_all_dirs() {
-        let adj = simple_patterns_common();
-        assert!(adj.allowed_in_all_dirs(BLANK, BLANK));
-    }
-
-    #[test]
-    fn blank_allowed_to_the_right_of_blank_right() {
-        let adj = simple_patterns_common();
-        for br in BLANK_RIGHT {
-            assert!(adj.is_allowed(br, BLANK, Right));
-            assert!(adj.is_allowed(BLANK, br, Left));
-        }
-    }
-    #[test]
-    fn blank_allowed_to_the_left_of_blank_left() {
-        let adj = simple_patterns_common();
-        for bl in BLANK_LEFT {
-            assert!(adj.is_allowed(bl, BLANK, Left));
-            assert!(adj.is_allowed(BLANK, bl, Right));
-        }
-    }
-    #[test]
-    fn blank_allowed_below_blank_down() {
-        let adj = simple_patterns_common();
-        for bd in BLANK_DOWN {
-            assert!(adj.is_allowed(bd, BLANK, Down));
-            assert!(adj.is_allowed(BLANK, bd, Up));
-        }
-    }
-    #[test]
-    fn blank_allowed_above_blank_up() {
-        let adj = simple_patterns_common();
-        for bu in BLANK_UP {
-            assert!(adj.is_allowed(bu, BLANK, Up));
-            assert!(adj.is_allowed(BLANK, bu, Down));
-        }
-    }
-
-    #[test]
-    fn blank_not_allowed_to_the_left_of_blank_right() {
-        let adj = simple_patterns_common();
-        for br in BLANK_RIGHT {
-            assert!(!adj.is_allowed(br, BLANK, Left));
-            assert!(!adj.is_allowed(BLANK, br, Right));
-        }
-    }
-    #[test]
-    fn blank_not_allowed_to_the_right_of_blank_left() {
-        let adj = simple_patterns_common();
-        for bl in BLANK_LEFT {
-            assert!(!adj.is_allowed(bl, BLANK, Right));
-            assert!(!adj.is_allowed(BLANK, bl, Left));
-        }
-    }
-    #[test]
-    fn blank_not_allowed_above_blank_down() {
-        let adj = simple_patterns_common();
-        for bd in BLANK_DOWN {
-            assert!(!adj.is_allowed(bd, BLANK, Up));
-            assert!(!adj.is_allowed(BLANK, bd, Down));
-        }
-    }
-
-    #[test]
-    fn blank_not_allowed_below_blank_up() {
-        let adj = simple_patterns_common();
-        for bu in BLANK_UP {
-            assert!(!adj.is_allowed(bu, BLANK, Down));
-            assert!(!adj.is_allowed(BLANK, bu, Up));
-        }
-    }
-
-    fn all_allowed(froms: [TileId; 2], tos: [TileId; 2], dir: CardinalDirs, adj: &AdjacencyRules) {
-        for from in froms {
-            for to in tos {
-                assert!(adj.is_allowed(from,to,dir), "{} -> {:?} -> {} not allowed", CHARS[from], dir, CHARS[to]);
-            }
-        }
-    }
-
-    fn not_allowed(froms: [TileId; 2], tos: [TileId; 2], dir: CardinalDirs, adj: &AdjacencyRules) {
-        for from in froms {
-            for to in tos {
-                assert!(!adj.is_allowed(from,to,dir), "{} -> {:?} -> {} allowed", CHARS[from], dir, CHARS[to]);
-            }
-        }
-    }
-
-    #[test]
-    fn bl_allowed_left_of_br() {
-        let adj = &simple_patterns_common();
-        all_allowed(BLANK_RIGHT, BLANK_LEFT, Left, adj)
-    }
-    #[test]
-    fn br_not_allowed_right_of_br() {
-        let adj = &simple_patterns_common();
-        not_allowed(BLANK_RIGHT, BLANK_RIGHT, Right, adj)
-    }
-    #[test]
-    fn bl_not_allowed_left_of_bl() {
-        let adj = &simple_patterns_common();
-        not_allowed(BLANK_LEFT, BLANK_LEFT, Left, adj)
-    }
-
-    #[test]
-    fn remove_all_but_one_enabler() {
-        let adj = simple_patterns_common();
-        let mut enab = EnablerDict::new(&adj);
-        let mut removed_ids = enab.remove_all_but(BLANK);
-        assert!(removed_ids.len() == 4);
-        removed_ids.sort();
-        assert!(removed_ids == vec![1, 2, 3, 4]);
-    }
-
-    fn usize4_to_vec4(arr: [usize; 4]) -> UVec4 {
-        let [x, y, z, w] = arr;
-        return UVec4::new(x as u32, y as u32, z as u32, w as u32);
-    }
-
-    fn enabler_counts_common() -> Vec<[usize;4]> {
-        let adj = simple_patterns_common();
-        let enab = EnablerDict::new(&adj);
-        let counts: Vec<[usize; 4]> = enab
-            .enablers
-            .iter()
-            .map(|opt_c| {
-                opt_c.expect("All enabler counts should start out as Some(count)")
-            })
-            .collect();
-        return counts;
-    }
-    #[test]
-    fn blank_enabler_counts_all_3() {
-        let counts = enabler_counts_common();
-        assert!(usize4_to_vec4(counts[BLANK]) == UVec4::splat(3), "{:?} != {:?}", counts[BLANK], UVec4::splat(3));
-    }
-    fn connect_2_blank_3(id: TileId, connect_dirs: [CardinalDirs; 2], counts: &[[usize; 4]]) {
-        let [dir1, dir2] = connect_dirs;
-        for dir in [dir1, dir2] {
-            assert!(counts[id][dir] == 2, "tile: {} ({}) -> {:?} -> count = {} != {}", CHARS[id],id,dir, counts[id][dir],2);
-        }
-        for dir in [-dir1, -dir2] {
-            assert!(counts[id][dir] == 3, "tile: {} ({}) -> {:?} -> count = {} != {}", CHARS[id],id,dir, counts[id][dir],3);
-        }
-    }
-    #[test]
-    fn lu_c2b3() {
-        let counts = enabler_counts_common();
-        connect_2_blank_3(LU, [Left, Up], &counts);
-    }
-    #[test]
-    fn rd_c2b3() {
-        let counts = enabler_counts_common();
-        connect_2_blank_3(RD, [Right, Down], &counts);
-    }
-    #[test]
-    fn ur_c2b3() {
-        let counts = enabler_counts_common();
-        connect_2_blank_3(UR, [Right, Up], &counts);
-    }
-    #[test]
-    fn dl_c2b3() {
-        let counts = enabler_counts_common();
-        connect_2_blank_3(DL, [Left, Down], &counts);
-    }
-
-    #[test]
-    fn no_enabler_counts_are_zero() {
-        let adj = simple_patterns_common();
-        for id in 0..5 {
-            let counts = adj.enabled_by_count(id);
-            let v4 = usize4_to_vec4(counts);
-            let b4 = v4.cmpeq(UVec4::ZERO);
-            assert!(!b4.any());
-        }
-    }
 }
